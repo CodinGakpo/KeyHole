@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "category": { "type": "enum", "choices": ["invoice", "receipt", "contract", "other"] },
+    "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "reference": { "type": "string", "max_length": 32, "charset": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-" }
+  }
+}
