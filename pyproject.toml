@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mark1"
+version = "0.1.0"
+description = "Confidential code execution with a bandwidth-bounded, attested exit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "pydantic>=2",
+    "cryptography>=41",
+]
+
+[project.optional-dependencies]
+cloud = ["boto3>=1.34"]
+mcp = ["mcp>=1.0"]
+dev = ["pytest>=8", "ruff>=0.5", "mypy>=1.8"]
+
+[project.scripts]
+sbx = "mark1.cli.main:main"
+mark1-mcp = "mark1.mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mark1"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
