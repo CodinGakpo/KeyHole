@@ -9,7 +9,7 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
 - **M0 — Scaffold + CI + contracts** ✅ (package, models, schema types, tests, this repo)
 - **M1 — Local executor + typed exit + bandwidth** ✅ (runs today via `sbx run --local`)
 - **M2 — Attestation** ✅ (ed25519 local signer + standalone verifier; KMS signer for cloud)
-- **M3 — Egress proxy / "no side exit"** — image written; local two-container harness pending
+- **M3 — Egress proxy / "no side exit"** ✅ (real-tunneling deny-by-default proxy; Docker harness proves containment: direct egress blocked, unlisted denied, only allowlisted permitted)
 - **M4 — Terraform AWS infra** — modules scaffolded; not yet applied
 - **M5 — Fargate execution end-to-end** — launcher param builder done; wiring pending
 - **M6 — Confidentiality hardening + hostile suite** — local hostile suite green; cloud gating pending
