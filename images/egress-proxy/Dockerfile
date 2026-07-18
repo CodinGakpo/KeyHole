@@ -5,8 +5,8 @@
 
 FROM python:3.12-slim
 
-RUN groupadd --gid 10002 proxy \
- && useradd  --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin proxy
+RUN groupadd --gid 10002 mark1proxy \
+ && useradd  --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin mark1proxy
 
 COPY proxy.py /opt/mark1/proxy.py
 
