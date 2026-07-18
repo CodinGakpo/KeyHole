@@ -28,6 +28,12 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "monthly_budget_usd" {
+  type        = number
+  description = "Monthly cost budget; alerts fire at 50/80/100% (actual) + 100% (forecasted)."
+  default     = 5
+}
+
 variable "enable_control_plane" {
   type        = bool
   description = "Create the KMS key + Lambda/API Gateway control plane (M5). Off => free data plane only."
@@ -87,9 +93,10 @@ module "controlplane" {
 }
 
 module "guardrails" {
-  count       = var.alert_email != "" ? 1 : 0
-  source      = "../../modules/guardrails"
-  alert_email = var.alert_email
+  count              = var.alert_email != "" ? 1 : 0
+  source             = "../../modules/guardrails"
+  alert_email        = var.alert_email
+  monthly_budget_usd = var.monthly_budget_usd
 }
 
 output "api_endpoint" { value = try(module.controlplane[0].api_endpoint, null) }

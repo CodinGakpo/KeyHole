@@ -1,5 +1,8 @@
 # Guardrails: a monthly AWS Budgets alarm so cost never surprises you. The budget is a hard
 # backstop; the application-level quotas (see mark1.controlplane.quotas) are the first line.
+# One budget per account is free. Given the expected steady state (~$1/mo for the KMS key plus
+# pennies of Fargate), a $5 limit warns well below the ~$10 concern line and catches anything
+# unexpected (a stray NAT gateway, a stuck task) early.
 
 variable "name_prefix" {
   type    = string
@@ -8,12 +11,23 @@ variable "name_prefix" {
 
 variable "monthly_budget_usd" {
   type    = number
-  default = 10
+  default = 5
 }
 
 variable "alert_email" {
   type        = string
-  description = "Email to notify at 50%/80%/100% of budget"
+  description = "Email to notify on budget thresholds"
+}
+
+locals {
+  # ACTUAL fires on spend already incurred; FORECASTED fires when AWS projects you'll exceed the
+  # limit by month end — an earlier heads-up.
+  budget_notifications = [
+    { type = "ACTUAL", threshold = 50 },
+    { type = "ACTUAL", threshold = 80 },
+    { type = "ACTUAL", threshold = 100 },
+    { type = "FORECASTED", threshold = 100 },
+  ]
 }
 
 resource "aws_budgets_budget" "monthly" {
@@ -24,13 +38,15 @@ resource "aws_budgets_budget" "monthly" {
   time_unit    = "MONTHLY"
 
   dynamic "notification" {
-    for_each = [50, 80, 100]
+    for_each = local.budget_notifications
     content {
       comparison_operator        = "GREATER_THAN"
-      threshold                  = notification.value
+      threshold                  = notification.value.threshold
       threshold_type             = "PERCENTAGE"
-      notification_type          = "ACTUAL"
+      notification_type          = notification.value.type
       subscriber_email_addresses = [var.alert_email]
     }
   }
 }
+
+output "budget_name" { value = aws_budgets_budget.monthly.name }
