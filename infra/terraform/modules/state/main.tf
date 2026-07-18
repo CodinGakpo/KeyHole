@@ -9,7 +9,8 @@ variable "name_prefix" {
 
 variable "kms_key_arn" {
   type        = string
-  description = "KMS key for bucket SSE and attestation signing"
+  description = "Customer KMS key for bucket SSE. Empty => free SSE-S3 (AES256)."
+  default     = ""
 }
 
 resource "aws_dynamodb_table" "runs" {
@@ -45,12 +46,13 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
   restrict_public_buckets = true
 }
 
+# Default to free SSE-S3 (AES256); use the customer KMS key only when one is supplied.
 resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm     = "aws:kms"
-      kms_master_key_id = var.kms_key_arn
+      sse_algorithm     = var.kms_key_arn == "" ? "AES256" : "aws:kms"
+      kms_master_key_id = var.kms_key_arn == "" ? null : var.kms_key_arn
     }
   }
 }

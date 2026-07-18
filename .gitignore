@@ -28,6 +28,9 @@ local-keys/
 *.tfstate.*
 *.tfvars
 !example.tfvars
+tfplan
+*.tfplan
+crash.log
 
 # OS
 .DS_Store

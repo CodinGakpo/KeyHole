@@ -35,10 +35,10 @@ resource "aws_vpc" "this" {
 }
 
 resource "aws_subnet" "private" {
-  vpc_id            = aws_vpc.this.id
-  cidr_block        = var.private_subnet_cidr
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = var.private_subnet_cidr
   map_public_ip_on_launch = false
-  tags              = { Name = "${var.name_prefix}-private" }
+  tags                    = { Name = "${var.name_prefix}-private" }
 }
 
 # A route table with NO NAT/IGW route: there is simply no path to the internet.
@@ -64,7 +64,7 @@ resource "aws_security_group" "deny_all" {
 # Free S3 gateway endpoint: lets the task read code/data and write results without any internet.
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
-  service_name      = "com.amazonaws.${data.aws_region.current.name}.s3"
+  service_name      = "com.amazonaws.${data.aws_region.current.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
   tags              = { Name = "${var.name_prefix}-s3-gw" }
@@ -94,7 +94,7 @@ resource "aws_security_group" "endpoints" {
 resource "aws_vpc_endpoint" "interface" {
   for_each            = toset(local.interface_services)
   vpc_id              = aws_vpc.this.id
-  service_name        = "com.amazonaws.${data.aws_region.current.name}.${each.value}"
+  service_name        = "com.amazonaws.${data.aws_region.current.region}.${each.value}"
   vpc_endpoint_type   = "Interface"
   subnet_ids          = [aws_subnet.private.id]
   security_group_ids  = [aws_security_group.endpoints[0].id]

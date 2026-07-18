@@ -12,6 +12,11 @@ variable "sandbox_image" {
   description = "ECR image URI for the sandbox container"
 }
 
+variable "proxy_image" {
+  type        = string
+  description = "ECR image URI for the egress-proxy sidecar container"
+}
+
 variable "log_group_name" {
   type    = string
   default = "/mark1/sandbox"
@@ -80,22 +85,42 @@ resource "aws_ecs_task_definition" "sandbox" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn # the EMPTY role
 
-  container_definitions = jsonencode([{
-    name                   = "sandbox"
-    image                  = var.sandbox_image
-    essential              = true
-    readonlyRootFilesystem = true
-    user                   = "10001:10001"
-    linuxParameters        = { initProcessEnabled = true }
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
-        "awslogs-region"        = data.aws_region.current.name
-        "awslogs-stream-prefix" = "sandbox"
+  container_definitions = jsonencode([
+    {
+      name                   = "sandbox"
+      image                  = var.sandbox_image
+      essential              = true
+      readonlyRootFilesystem = true
+      user                   = "10001:10001"
+      linuxParameters        = { initProcessEnabled = true }
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
+          "awslogs-region"        = data.aws_region.current.region
+          "awslogs-stream-prefix" = "sandbox"
+        }
       }
-    }
-  }])
+    },
+    {
+      # Egress-proxy sidecar: the sandbox's only intended network path (deny-by-default, logs
+      # attempts). Per-run allowlist is injected at launch (M5); default here is deny-all.
+      name                   = "egress-proxy"
+      image                  = var.proxy_image
+      essential              = false
+      readonlyRootFilesystem = true
+      user                   = "10002:10002"
+      environment            = [{ name = "MARK1_ALLOWED_HOSTS", value = "" }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
+          "awslogs-region"        = data.aws_region.current.region
+          "awslogs-stream-prefix" = "egress-proxy"
+        }
+      }
+    },
+  ])
 }
 
 output "cluster_name" { value = aws_ecs_cluster.this.name }
