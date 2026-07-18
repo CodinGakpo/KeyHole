@@ -9,8 +9,10 @@ FROM python:3.12-slim AS base
 RUN groupadd --gid 10001 sandbox \
  && useradd  --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin sandbox
 
-# A world-writable scratch dir is the ONLY place code may write (root FS is read-only at runtime).
-RUN mkdir -p /sandbox && chown 10001:10001 /sandbox
+# Scratch dir owned by the sandbox user. At runtime the root FS is read-only and a writable
+# ephemeral volume is mounted at /sandbox/work; an empty volume inherits this mount point's
+# ownership (10001), so the non-root user can write there without weakening the read-only root.
+RUN mkdir -p /sandbox/work && chown -R 10001:10001 /sandbox
 
 WORKDIR /sandbox
 USER 10001:10001
