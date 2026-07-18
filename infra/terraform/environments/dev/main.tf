@@ -75,7 +75,6 @@ module "state" {
 module "execution" {
   source        = "../../modules/execution"
   sandbox_image = "${module.registry.sandbox_repo_url}:latest"
-  proxy_image   = "${module.registry.proxy_repo_url}:latest"
 }
 
 module "controlplane" {
@@ -106,4 +105,6 @@ output "cluster_name" { value = module.execution.cluster_name }
 output "task_definition_arn" { value = module.execution.task_definition_arn }
 output "private_subnet_id" { value = module.network.private_subnet_id }
 output "deny_all_security_group_id" { value = module.network.deny_all_security_group_id }
+output "run_security_group_id" { value = module.network.run_security_group_id }
+output "bucket" { value = module.state.bucket }
 output "empty_task_role_arn" { value = module.execution.empty_task_role_arn }

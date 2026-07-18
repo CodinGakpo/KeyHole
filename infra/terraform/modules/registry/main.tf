@@ -11,9 +11,11 @@ locals {
 }
 
 resource "aws_ecr_repository" "this" {
-  for_each             = toset(local.repos)
-  name                 = "${var.name_prefix}/${each.value}"
-  image_tag_mutability = "IMMUTABLE"
+  for_each = toset(local.repos)
+  name     = "${var.name_prefix}/${each.value}"
+  # MUTABLE so the dev loop can re-push :latest. Pin to immutable digests for production.
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
   image_scanning_configuration {
     scan_on_push = true
   }

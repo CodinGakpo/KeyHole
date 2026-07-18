@@ -12,11 +12,6 @@ variable "sandbox_image" {
   description = "ECR image URI for the sandbox container"
 }
 
-variable "proxy_image" {
-  type        = string
-  description = "ECR image URI for the egress-proxy sidecar container"
-}
-
 variable "log_group_name" {
   type    = string
   default = "/mark1/sandbox"
@@ -85,7 +80,41 @@ resource "aws_ecs_task_definition" "sandbox" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn # the EMPTY role
 
+  # Writable ephemeral scratch for the read-only-root container. An empty volume mounted over the
+  # image's /sandbox/work inherits that path's ownership (uid 10001), so the non-root sandbox user
+  # can write there while the rest of the root filesystem stays read-only.
+  volume {
+    name = "scratch"
+  }
+
+  # A single sandbox container. Network containment is enforced at the subnet/route/SG level
+  # (private subnet, no NAT, endpoints-only egress) — NOT by an in-task sidecar, because Fargate
+  # awsvpc containers share one network namespace. The egress-proxy image + its Docker harness are
+  # retained for the future allowlisted-egress feature, which needs a different enforcement point.
   container_definitions = jsonencode([
+    {
+      # Init container: runs as root ONLY to chown the shared scratch volume to the sandbox user,
+      # then exits. This is the correct way to give a read-only-root, non-root container writable
+      # scratch on Fargate (empty volumes mount root-owned). It touches only the volume — no AWS
+      # access, no network — so the empty task role and containment are unaffected.
+      name                   = "init-scratch"
+      image                  = var.sandbox_image
+      essential              = false
+      readonlyRootFilesystem = true
+      user                   = "0:0"
+      entryPoint             = ["sh", "-c", "chown 10001:10001 /sandbox/work"]
+      mountPoints = [
+        { sourceVolume = "scratch", containerPath = "/sandbox/work", readOnly = false }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
+          "awslogs-region"        = data.aws_region.current.region
+          "awslogs-stream-prefix" = "init"
+        }
+      }
+    },
     {
       name                   = "sandbox"
       image                  = var.sandbox_image
@@ -93,30 +122,18 @@ resource "aws_ecs_task_definition" "sandbox" {
       readonlyRootFilesystem = true
       user                   = "10001:10001"
       linuxParameters        = { initProcessEnabled = true }
+      dependsOn = [
+        { containerName = "init-scratch", condition = "SUCCESS" }
+      ]
+      mountPoints = [
+        { sourceVolume = "scratch", containerPath = "/sandbox/work", readOnly = false }
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
           "awslogs-region"        = data.aws_region.current.region
           "awslogs-stream-prefix" = "sandbox"
-        }
-      }
-    },
-    {
-      # Egress-proxy sidecar: the sandbox's only intended network path (deny-by-default, logs
-      # attempts). Per-run allowlist is injected at launch (M5); default here is deny-all.
-      name                   = "egress-proxy"
-      image                  = var.proxy_image
-      essential              = false
-      readonlyRootFilesystem = true
-      user                   = "10002:10002"
-      environment            = [{ name = "MARK1_ALLOWED_HOSTS", value = "" }]
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.sandbox.name
-          "awslogs-region"        = data.aws_region.current.region
-          "awslogs-stream-prefix" = "egress-proxy"
         }
       }
     },
