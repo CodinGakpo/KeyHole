@@ -14,8 +14,19 @@ not behaviors of a scanner):
 The dataset must have nowhere to go *except* the declared result:
 
 - **No network egress.** The sandbox runs in a private subnet with **no NAT gateway** and no
-  internet route. An egress-proxy sidecar is the sandbox's only possible network path, and it
-  denies and logs every attempt. Default runs literally cannot reach the network.
+  internet route, behind a run security group whose only egress is to AWS service endpoints (the S3
+  prefix list and in-subnet ECR/Logs interface endpoints). Default runs literally cannot reach the
+  general internet. Containment is enforced at the **subnet/route/SG layer**, not by an in-task
+  sidecar — see the M5 correction below.
+
+  > **Correction (M5).** Earlier drafts of this chapter described an *egress-proxy sidecar* as "the
+  > sandbox's only possible network path." Standing the system up on Fargate revealed this is not
+  > how `awsvpc` works: every container in a task shares **one network namespace**, so a sidecar
+  > cannot transparently intercept its neighbour's traffic — it is a peer, not a gateway. The honest
+  > enforcement point is the network itself (private subnet, no NAT, endpoints-only security group),
+  > which is where containment now lives. The egress-proxy image and its Docker harness are retained
+  > for the future *allowlisted-egress* feature, which requires a genuine chokepoint (e.g. a separate
+  > proxy task the sandbox is routed through) rather than a same-task sidecar.
 - **No reachable cloud credentials.** The task's IAM role is **empty** — the container-metadata
   endpoint vends credentials that can do nothing. (Fargate has no EC2 instance-metadata service, so
   the classic instance-profile theft vector doesn't exist.) The executor also strips

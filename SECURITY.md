@@ -14,8 +14,13 @@ guaranteed, what is bounded, and what is out of scope. The full reasoning is in
 
 ## Structurally guaranteed
 
-- **No network egress.** No NAT gateway, no internet route; an egress-proxy sidecar denies and logs
-  any attempt. Default runs cannot reach the network.
+- **No network egress.** Containment is enforced at the subnet/route/SG layer — a private subnet
+  with no NAT and no internet route, and a run security group whose only egress is to AWS service
+  endpoints (S3 prefix list + in-subnet ECR/Logs). Default runs cannot reach the general internet.
+  (An in-task egress-proxy sidecar is *not* the enforcement point: Fargate `awsvpc` containers share
+  one network namespace, so a sidecar cannot intercept its neighbours. The egress-proxy image and
+  its Docker harness are retained for the future allowlisted-egress feature, which needs a different
+  enforcement point.)
 - **No reachable cloud credentials.** The sandbox task role is **empty** — the metadata endpoint
   vends credentials that can do nothing. (Fargate has no EC2 IMDS.)
 - **No persistence.** Read-only root filesystem + ephemeral scratch; the task is destroyed after
