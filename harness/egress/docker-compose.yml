@@ -1,0 +1,34 @@
+# M3 containment harness: prove there is no side exit.
+#
+# Mirrors the Fargate sandbox + egress-proxy sidecar layout with two Docker networks:
+#   * internal  - internal:true, NO route to the internet (the sandbox's posture)
+#   * edge      - normal bridge WITH internet (only the proxy touches it)
+#
+# The probe sits on `internal` only, so its only path to anything is through the proxy. Run with:
+#   docker compose -f harness/egress/docker-compose.yml up --build \
+#       --abort-on-container-exit --exit-code-from probe
+# The probe exits 0 iff direct egress is blocked, the proxy denies unlisted hosts, and permits
+# only the allowlisted one.
+
+services:
+  proxy:
+    build: ../../images/egress-proxy
+    networks: [edge, internal]
+    environment:
+      MARK1_ALLOWED_HOSTS: "1.1.1.1"
+      MARK1_PROXY_PORT: "8080"
+
+  probe:
+    build:
+      context: .
+      dockerfile: probe.Dockerfile
+    depends_on: [proxy]
+    networks: [internal] # internal ONLY -> no direct internet
+    environment:
+      MARK1_PROXY_HOST: "proxy"
+      MARK1_PROXY_PORT: "8080"
+
+networks:
+  edge: {}
+  internal:
+    internal: true
