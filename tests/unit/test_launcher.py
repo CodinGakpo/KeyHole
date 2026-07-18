@@ -8,35 +8,39 @@ def _config(**kw) -> LauncherConfig:
         cluster="mark1",
         task_definition="mark1-sandbox:1",
         private_subnet_id="subnet-private",
-        deny_all_security_group_id="sg-denyall",
+        security_group_id="sg-run",
     )
     base.update(kw)
     return LauncherConfig(**base)
 
 
 def test_no_public_ip_by_default():
-    params = build_run_task_params(_config(), "run-1", "s3://b/runs/run-1")
+    params = build_run_task_params(_config(), "run-1")
     vpc = params["networkConfiguration"]["awsvpcConfiguration"]
     assert vpc["assignPublicIp"] == "DISABLED"
 
 
-def test_uses_private_subnet_and_deny_all_sg():
-    params = build_run_task_params(_config(), "run-1", "s3://b/runs/run-1")
+def test_uses_private_subnet_and_run_sg():
+    params = build_run_task_params(_config(), "run-1")
     vpc = params["networkConfiguration"]["awsvpcConfiguration"]
     assert vpc["subnets"] == ["subnet-private"]
-    assert vpc["securityGroups"] == ["sg-denyall"]
+    assert vpc["securityGroups"] == ["sg-run"]
 
 
 def test_single_fargate_task():
-    params = build_run_task_params(_config(), "run-1", "s3://b/runs/run-1")
+    params = build_run_task_params(_config(), "run-1")
     assert params["launchType"] == "FARGATE"
     assert params["count"] == 1
 
 
-def test_run_id_and_output_path_are_injected():
-    params = build_run_task_params(_config(), "run-42", "s3://b/runs/run-42")
+def test_run_id_and_env_are_injected():
+    params = build_run_task_params(
+        _config(),
+        "run-42",
+        env={"MARK1_INPUT_URL": "https://s3/in", "MARK1_OUTPUT_URL": "https://s3/out"},
+    )
     env = params["overrides"]["containerOverrides"][0]["environment"]
     as_map = {e["name"]: e["value"] for e in env}
     assert as_map["MARK1_RUN_ID"] == "run-42"
-    assert as_map["MARK1_S3_PREFIX"] == "s3://b/runs/run-42"
-    assert as_map["MARK1_OUTPUT"].endswith("__mark1_output__.json")
+    assert as_map["MARK1_INPUT_URL"] == "https://s3/in"
+    assert as_map["MARK1_OUTPUT_URL"] == "https://s3/out"
