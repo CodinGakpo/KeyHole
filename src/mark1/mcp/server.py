@@ -23,6 +23,7 @@ def run_confidential(
     data: dict[str, str],
     output_schema: dict[str, Any],
     timeout_seconds: int = 60,
+    principal: str = "default",
 ) -> dict[str, Any]:
     """Core tool implementation, independent of the MCP transport (so it's directly testable)."""
     request = RunRequest(
@@ -30,6 +31,7 @@ def run_confidential(
         data=data,
         output_schema=OutputSchema.from_dict(output_schema),
         limits=Limits(timeout_seconds=timeout_seconds),
+        principal=principal,
     )
     signer = load_or_create_dev_signer()
     outcome = run_local(request, signer)
@@ -58,9 +60,10 @@ def main() -> int:
         data: dict[str, str],
         output_schema: dict[str, Any],
         timeout_seconds: int = 60,
+        principal: str = "default",
     ) -> dict[str, Any]:
         """Run untrusted code on supplied data; return only a schema-conforming, attested value."""
-        return run_confidential(code, data, output_schema, timeout_seconds)
+        return run_confidential(code, data, output_schema, timeout_seconds, principal)
 
     server.run()
     return 0
