@@ -50,8 +50,11 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## D. Ecosystem & DX
 
-- **Web dashboard.** Browse runs, inspect data-flow records, verify attestations visually. *Why:*
-  makes the audit trail legible. *Medium.*
+- ✅ **Web dashboard.** *Done* — `sbx dashboard` serves a self-contained, read-only viewer
+  (stdlib `http.server`, no framework/CDN) over the local run history: a run ledger, a per-run
+  inspector (bound hashes, verdict, data-flow timeline), the **exit-bandwidth aperture** gauge, and
+  drag-an-attestation signature verification. Pointing it at DynamoDB for cloud runs is a small
+  follow-up. *Why:* makes the audit trail legible.
 - **Policy-as-code CI gate.** Fail a build if a run would violate its declared exit schema. *Why:*
   DevSecOps integration. *Medium.*
 - **SDKs.** Thin Python/TS client libraries over the REST API. *Easy.*

@@ -20,6 +20,9 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
 
 **Shipped so far:**
 
+- ✅ **Web dashboard** — `sbx dashboard` serves a self-contained, read-only viewer (stdlib
+  `http.server`) over the local run history: ledger, per-run inspector (hashes, verdict, data-flow
+  timeline), an exit-bandwidth aperture gauge, and drag-to-verify attestation checking.
 - ✅ **M9 — Cloud control plane (deployable API)** — Lambda + API Gateway HTTP API, DynamoDB
   persistence (append-only audit), and **KMS-signed attestations** (ECDSA P-256; the private key
   never leaves KMS). `sbx run` without `--local` hits the API (async submit/poll). Verified live on

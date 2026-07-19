@@ -128,6 +128,34 @@ sbx verify att.json --pubkey kms.pem               # VALID, algorithm: ecdsa-p25
 The KMS signing key is ~$1/month; Lambda + API Gateway + DynamoDB are free/pennies at this scale.
 `terraform destroy` returns the account to ≈ $0.
 
+## Dashboard
+
+`sbx run --local` records each run under `~/.mark1`; `sbx dashboard` serves a self-contained,
+read-only viewer of that history — no web framework, no CDN, no external requests. Its signature
+element is the **exit-bandwidth aperture**: a log-scale gauge that plots a run's exit bits against
+`1 bit → 1 KB → 1 MB`, so a bounded exit reads as the sliver it is.
+
+```text
+ MARK·1   run evidence                          ● released  ● withheld  ● failed
+┌────────────────────────────┬──────────────────────────────────────────────────┐
+│ RUN LEDGER            3 runs│  VERDICT                                          │
+│ ┌────────────────────────┐ │  Released   [succeeded]  run-042f…      ✓ VALID   │
+│ │ 042f19b1  [SUCCEEDED]  │ │                                                   │
+│ │ 4.75 bits    ✓ VALID   │ │  EXIT APERTURE          4.75 bits could leave     │
+│ ├────────────────────────┤ │  ├────────▮──────────────────────────────────┤   │
+│ │ 33c9e772  [WITHHELD]   │ │  1 bit   1 B        1 KB                 1 MB      │
+│ │ 1.58 bits    ✓ VALID   │ │                                                   │
+│ ├────────────────────────┤ │  BOUND HASHES — ed25519                           │
+│ │ 2ba7ca67  [SUCCEEDED]  │ │  code    3f2a…   data  9c1d…   schema  7b0e…      │
+│ │ 1.58 bits    ✓ VALID   │ │  DATA-FLOW RECORD ·  output_written               │
+│ └────────────────────────┘ │  VERIFY  ⤓ drop an attestation.json to check      │
+└────────────────────────────┴──────────────────────────────────────────────────┘
+```
+
+```bash
+sbx dashboard            # → http://127.0.0.1:8787   (Ctrl-C to stop)
+```
+
 ## Layout
 
 | Path | What |
