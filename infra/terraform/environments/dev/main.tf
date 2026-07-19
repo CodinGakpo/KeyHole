@@ -42,7 +42,7 @@ variable "enable_control_plane" {
 
 variable "lambda_zip_path" {
   type    = string
-  default = "../../../dist/controlplane.zip"
+  default = "../../../../dist/controlplane.zip"
 }
 
 variable "enable_egress_endpoints" {
@@ -50,12 +50,14 @@ variable "enable_egress_endpoints" {
   default = false
 }
 
-# Customer KMS key (bucket SSE + attestation signing). ~$1/mo, so only when the control plane is on.
+# Customer KMS key for attestation SIGNING only (the private key never leaves KMS). ~$1/mo, so
+# only when the control plane is on. The bucket uses free SSE-S3, so KMS is not needed for encryption.
 resource "aws_kms_key" "mark1" {
-  count                   = var.enable_control_plane ? 1 : 0
-  description             = "mark1 attestation + encryption"
-  deletion_window_in_days = 7
-  key_usage               = "ENCRYPT_DECRYPT"
+  count                    = var.enable_control_plane ? 1 : 0
+  description              = "mark1 attestation signing (ECDSA P-256)"
+  deletion_window_in_days  = 7
+  key_usage                = "SIGN_VERIFY"
+  customer_master_key_spec = "ECC_NIST_P256"
 }
 
 module "network" {
@@ -68,8 +70,9 @@ module "registry" {
 }
 
 module "state" {
-  source      = "../../modules/state"
-  kms_key_arn = var.enable_control_plane ? aws_kms_key.mark1[0].arn : ""
+  source = "../../modules/state"
+  # Bucket stays on free SSE-S3; the KMS key is a signing key, not an encryption key.
+  kms_key_arn = ""
 }
 
 module "execution" {
@@ -80,14 +83,21 @@ module "execution" {
 module "controlplane" {
   count               = var.enable_control_plane ? 1 : 0
   source              = "../../modules/controlplane"
+  region              = var.region
   lambda_zip_path     = var.lambda_zip_path
+  runs_table          = module.state.runs_table
+  audit_table         = module.state.audit_table
   runs_table_arn      = "arn:aws:dynamodb:${var.region}:*:table/${module.state.runs_table}"
   audit_table_arn     = "arn:aws:dynamodb:${var.region}:*:table/${module.state.audit_table}"
+  bucket              = module.state.bucket
   bucket_arn          = "arn:aws:s3:::${module.state.bucket}"
   cluster_arn         = "arn:aws:ecs:${var.region}:*:cluster/${module.execution.cluster_name}"
+  cluster_name        = module.execution.cluster_name
   task_definition_arn = module.execution.task_definition_arn
   task_role_arn       = module.execution.empty_task_role_arn
-  execution_role_arn  = module.execution.empty_task_role_arn
+  execution_role_arn  = module.execution.execution_role_arn
+  subnet_id           = module.network.private_subnet_id
+  security_group_id   = module.network.run_security_group_id
   kms_key_arn         = aws_kms_key.mark1[0].arn
 }
 
@@ -99,6 +109,7 @@ module "guardrails" {
 }
 
 output "api_endpoint" { value = try(module.controlplane[0].api_endpoint, null) }
+output "kms_key_id" { value = try(aws_kms_key.mark1[0].key_id, null) }
 output "sandbox_repo_url" { value = module.registry.sandbox_repo_url }
 output "proxy_repo_url" { value = module.registry.proxy_repo_url }
 output "cluster_name" { value = module.execution.cluster_name }
