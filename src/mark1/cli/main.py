@@ -14,8 +14,9 @@ from pathlib import Path
 from mark1.attest.keys import load_or_create_dev_signer
 from mark1.attest.record import Attestation
 from mark1.attest.verify import verify_attestation
-from mark1.common.config import dev_pubkey_path
+from mark1.common.config import dev_pubkey_path, home_dir
 from mark1.common.models import Limits, RunRequest
+from mark1.controlplane.budget import BudgetPolicy, FileLedger
 from mark1.controlplane.runner import run_local
 from mark1.schema.bandwidth import bandwidth_bits
 from mark1.schema.spec import OutputSchema
@@ -42,6 +43,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--local", action="store_true", help="run locally (no AWS)")
     run.add_argument("--timeout", type=int, default=60, help="wall-clock timeout (seconds)")
     run.add_argument("--save-attestation", metavar="PATH", help="write the attestation JSON here")
+    run.add_argument("--principal", default="default",
+                     help="caller identity the cumulative exit-bandwidth budget is keyed on")
+    run.add_argument("--budget-bits", type=float, metavar="BITS",
+                     help="cap total released exit-bits for --principal (enables the ledger)")
+    run.add_argument("--budget-window", type=float, metavar="SECONDS",
+                     help="rolling window for --budget-bits (default: cumulative for all time)")
     run.set_defaults(func=_cmd_run)
 
     verify = sub.add_parser("verify", help="verify an attestation file")
@@ -70,15 +77,21 @@ def _cmd_run(args: argparse.Namespace) -> int:
         data[name] = Path(path).read_text()
 
     request = RunRequest(
-        code=code, data=data, output_schema=schema, limits=Limits(timeout_seconds=args.timeout)
+        code=code, data=data, output_schema=schema, limits=Limits(timeout_seconds=args.timeout),
+        principal=args.principal,
     )
 
     if not args.local:
         print("error: only --local is supported in this build; pass --local", file=sys.stderr)
         return 2
 
+    ledger = budget = None
+    if args.budget_bits is not None:
+        ledger = FileLedger(home_dir() / "ledger.json")
+        budget = BudgetPolicy(max_exit_bits=args.budget_bits, window_seconds=args.budget_window)
+
     signer = load_or_create_dev_signer()
-    outcome = run_local(request, signer)
+    outcome = run_local(request, signer, ledger=ledger, budget=budget)
     r = outcome.result
 
     print(f"run:        {r.run_id}")
@@ -88,6 +101,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"output:     {json.dumps(r.output)}")
     else:
         print(f"withheld:   {r.withheld_reason}")
+    if budget is not None and r.cumulative_exit_bits is not None:
+        print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits used"
+              f" (principal '{args.principal}')")
     print(f"attestation:{r.attestation_id}")
 
     if args.save_attestation:
