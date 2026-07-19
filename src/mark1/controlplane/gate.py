@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 
 from mark1.attest.record import Attestation
 from mark1.attest.sign import Signer, sign_attestation
+from mark1.controlplane.budget import BudgetPolicy, Ledger, check_budget
 from mark1.common.hashing import (
     canonical_json_bytes,
     sha256_hex,
@@ -31,6 +33,7 @@ from mark1.common.models import (
     RunRequest,
     RunResult,
     RunStatus,
+    utcnow,
 )
 from mark1.dlp import scan_pii, scan_secrets
 from mark1.executor.entrypoint import ExecResult
@@ -51,10 +54,19 @@ def run_exit_gate(
     exec_result: ExecResult,
     signer: Signer,
     task_arn: str | None = None,
+    ledger: Ledger | None = None,
+    budget: BudgetPolicy | None = None,
+    now: datetime | None = None,
 ) -> GateOutcome:
-    """Inspect a run's output and produce a released-or-withheld, attested outcome."""
+    """Inspect a run's output and produce a released-or-withheld, attested outcome.
+
+    When both ``ledger`` and ``budget`` are supplied, a conforming output is additionally checked
+    against the caller's cumulative exit-bandwidth budget and withheld if releasing it would exceed
+    the cap (see :mod:`mark1.controlplane.budget`). With either unset, behavior is unchanged.
+    """
     schema = request.output_schema
     bandwidth = bandwidth_bits(schema)
+    cumulative_exit_bits: float | None = None
 
     code_sha = sha256_hex(request.code)
     data_sha = sha256_of_mapping(request.data)
@@ -114,11 +126,22 @@ def run_exit_gate(
                         "secondary DLP backstop flagged the output "
                         f"({dlp_findings} finding(s))"
                     )
+                elif ledger is not None and budget is not None and not (
+                    decision := check_budget(budget, ledger, request.principal, bandwidth, now)
+                ).allowed:
+                    status = RunStatus.WITHHELD
+                    withheld_reason = decision.reason
+                    cumulative_exit_bits = decision.spent_before
                 else:
                     status = RunStatus.SUCCEEDED
                     released = True
                     output_value = candidate
                     output_sha = sha256_hex(canonical_json_bytes(candidate))
+                    if ledger is not None and budget is not None:
+                        ledger.record(request.principal, bandwidth, now or utcnow())
+                        cumulative_exit_bits = ledger.spent(
+                            request.principal, budget.window_seconds, now or utcnow()
+                        )
 
     attestation = Attestation(
         run_id=run_id,
@@ -141,6 +164,7 @@ def run_exit_gate(
         output=output_value,
         withheld_reason=withheld_reason,
         exit_bandwidth_bits=bandwidth,
+        cumulative_exit_bits=cumulative_exit_bits,
         exit_code=exec_result.exit_code,
         duration_ms=exec_result.duration_ms,
         attestation_id=attestation.attestation_id,
@@ -154,6 +178,7 @@ def run_exit_gate(
         schema_sha256=schema_sha,
         output_sha256=output_sha,
         exit_bandwidth_bits=bandwidth,
+        cumulative_exit_bits=cumulative_exit_bits,
         egress_attempts=egress_attempts,
         egress_denied=egress_denied,
         dlp_findings=dlp_findings,

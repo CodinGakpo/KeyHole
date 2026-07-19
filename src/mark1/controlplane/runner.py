@@ -11,6 +11,7 @@ from pathlib import Path
 
 from mark1.attest.sign import Signer
 from mark1.common.models import RunRequest
+from mark1.controlplane.budget import BudgetPolicy, Ledger
 from mark1.controlplane.gate import GateOutcome, run_exit_gate
 from mark1.executor.entrypoint import run_code
 
@@ -20,8 +21,10 @@ def run_local(
     signer: Signer,
     run_id: str | None = None,
     workdir: str | Path | None = None,
+    ledger: Ledger | None = None,
+    budget: BudgetPolicy | None = None,
 ) -> GateOutcome:
     """Run ``request`` locally and return the gated, attested outcome."""
     rid = run_id or f"run-{uuid.uuid4().hex}"
     exec_result = run_code(request, workdir=workdir)
-    return run_exit_gate(rid, request, exec_result, signer)
+    return run_exit_gate(rid, request, exec_result, signer, ledger=ledger, budget=budget)

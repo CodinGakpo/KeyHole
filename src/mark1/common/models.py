@@ -44,6 +44,7 @@ class RunRequest(BaseModel):
     data: dict[str, str] = Field(default_factory=dict)  # filename -> contents supplied into the box
     output_schema: OutputSchema
     limits: Limits = Field(default_factory=Limits)
+    principal: str = "default"  # caller identity the cumulative exit-bandwidth budget is keyed on
 
 
 class DataFlowEventKind(str, enum.Enum):
@@ -70,6 +71,7 @@ class RunResult(BaseModel):
     output: Any | None = None  # the released, schema-conforming value (None if withheld/failed)
     withheld_reason: str | None = None
     exit_bandwidth_bits: float | None = None
+    cumulative_exit_bits: float | None = None  # principal's total released bits (if budgeted)
     exit_code: int | None = None
     duration_ms: int | None = None
     attestation_id: str | None = None
@@ -86,6 +88,7 @@ class AuditRecord(BaseModel):
     schema_sha256: str
     output_sha256: str | None = None
     exit_bandwidth_bits: float | None = None
+    cumulative_exit_bits: float | None = None  # principal's total released bits (if budgeted)
     egress_attempts: int = 0
     egress_denied: int = 0
     dlp_findings: int = 0

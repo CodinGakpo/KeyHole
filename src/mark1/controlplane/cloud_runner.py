@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from mark1.attest.sign import Signer
 from mark1.common.models import DataFlowEvent, DataFlowEventKind, RunRequest
+from mark1.controlplane.budget import BudgetPolicy, Ledger
 from mark1.controlplane.gate import GateOutcome, run_exit_gate
 from mark1.controlplane.launcher import LauncherConfig, launch
 from mark1.executor.entrypoint import ExecResult
@@ -45,6 +46,8 @@ def run_cloud(
     config: CloudConfig,
     signer: Signer,
     run_id: str | None = None,
+    ledger: Ledger | None = None,
+    budget: BudgetPolicy | None = None,
 ) -> tuple[GateOutcome, str]:
     """Execute ``request`` on Fargate and return the gated outcome plus the task ARN."""
     import boto3
@@ -92,7 +95,9 @@ def run_cloud(
     stopped_reason = _describe_stop(ecs, config.cluster, task_arn)
 
     exec_result = _fetch_result(s3, config.bucket, output_key, stopped_reason)
-    outcome = run_exit_gate(rid, request, exec_result, signer, task_arn=task_arn)
+    outcome = run_exit_gate(
+        rid, request, exec_result, signer, task_arn=task_arn, ledger=ledger, budget=budget
+    )
 
     # Best-effort cleanup (the bucket lifecycle also expires these).
     for key in (input_key, output_key):
