@@ -8,8 +8,11 @@ A short map; the narrative version is [`docs/book/05-architecture.md`](docs/book
   API (and an in-process local path).
 - **Control plane** — a Lambda behind an API Gateway HTTP API. Validates requests, launches
   sandboxes, runs the **exit gate**, signs attestations, records audit. Scales to zero.
-- **Sandbox task** — an ephemeral ECS Fargate task: the sandbox container (untrusted code, empty
-  task role, read-only FS) + an egress-proxy sidecar (deny-by-default, logs attempts).
+- **Sandbox task** — an ephemeral ECS Fargate task: an init container chowns the scratch volume,
+  then the sandbox container runs the untrusted code (empty task role, read-only root FS). Egress
+  containment is enforced by the **network** — private subnet, no NAT, endpoints-only run security
+  group — not by an in-task sidecar (Fargate `awsvpc` containers share one network namespace, so a
+  sidecar cannot intercept its neighbours; see book ch. 4).
 - **State & storage** — DynamoDB (`mark1_runs`, append-only `mark1_audit`), S3 (code/data/schema/
   output/attestation, SSE-KMS), ECR (images), KMS (encryption + attestation signing).
 
@@ -18,9 +21,11 @@ A short map; the narrative version is [`docs/book/05-architecture.md`](docs/book
 ```
 sbx run code.py --data d.csv --schema s.json
   → POST /runs (code + data + schema + limits)
-  → control plane: validate schema, PENDING record, upload inputs to S3, ecs.run_task
-  → Fargate: loader sidecar places inputs; sandbox runs code (no net, no creds); writes typed output
-  → control plane EXIT GATE: validate vs schema → bandwidth → DLP backstop → sign attestation
+  → control plane: validate schema, upload input bundle to S3, presign GET (input) + PUT (output)
+  → ecs.run_task → Fargate: init-chown, then sandbox fetches the presigned bundle, runs the code
+    (no internet route, empty task role, read-only root), PUTs the output envelope back to S3
+  → control plane EXIT GATE: validate vs schema → bandwidth (+ cumulative budget) → DLP backstop
+    → sign attestation → release or withhold
   → GET /runs/{id} returns released output + attestation; sbx verify checks it independently
 ```
 

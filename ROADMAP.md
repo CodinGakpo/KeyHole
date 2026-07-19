@@ -12,9 +12,9 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
 - **M3 — Egress proxy / "no side exit"** ✅ (real-tunneling deny-by-default proxy; Docker harness proves containment: direct egress blocked, unlisted denied, only allowlisted permitted)
 - **M4 — Terraform AWS infra** ✅ (free-tier data plane applied to a real account & verified: empty task role, no-NAT route table, deny-all SG, AES256 S3; then destroyed — full apply→destroy lifecycle, ~$0)
 - **M5 — Fargate execution end-to-end** ✅ (`run_cloud`: presigned-S3 I/O, launch task, wait, gate, attest — verified on a real cluster: honest run released + attested, hostile exfil withheld + attested; then destroyed, ~$0)
-- **M6 — Confidentiality hardening + hostile suite** — local hostile suite green; cloud gating proven end-to-end (M5); more hostile cloud cases pending
-- **M7 — MCP server** — tool implemented; transport wiring pending the `mcp` extra
-- **M8 — Polish** — README/SECURITY/ARCHITECTURE done; demo gif + diagrams pending
+- **M6 — Confidentiality hardening + hostile suite** ✅ (hostile suite green: dump/encode/stdout/fork-bomb/memory-hog/drip-exfiltration all structurally blocked; cloud gating proven on real Fargate in M5; a cloud egress-probe case is scripted in `cloud_smoke.py` and runs on every future apply)
+- **M7 — MCP server** ✅ (`mark1-mcp` over stdio, integration-tested end-to-end through the MCP wire: honest run released + attested, exfiltration withheld)
+- **M8 — Polish** ✅ (truthful README with architecture diagram + demo transcript + MCP setup; ARCHITECTURE.md matches as-built; `sbx doctor` checks extras)
 
 ## Beyond the base
 
