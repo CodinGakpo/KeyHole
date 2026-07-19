@@ -9,12 +9,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 from mark1.attest.keys import load_or_create_dev_signer
 from mark1.attest.record import Attestation
 from mark1.attest.verify import verify_attestation
-from mark1.common.config import dev_pubkey_path, home_dir
+from mark1.common.api_client import ApiClient
+from mark1.common.config import api_endpoint, dev_pubkey_path, home_dir
 from mark1.common.models import Limits, RunRequest
 from mark1.controlplane.budget import BudgetPolicy, FileLedger
 from mark1.controlplane.runner import run_local
@@ -53,7 +55,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     verify = sub.add_parser("verify", help="verify an attestation file")
     verify.add_argument("attestation", help="path to an attestation JSON")
-    verify.add_argument("--pubkey", help="signer public-key PEM (defaults to local dev pubkey)")
+    verify.add_argument("--pubkey",
+                        help="signer public-key PEM: local dev pubkey (default), or a KMS-exported "
+                             "PEM for cloud ecdsa-p256 attestations")
     verify.set_defaults(func=_cmd_verify)
 
     keygen = sub.add_parser("keygen", help="create the local dev signing key if absent")
@@ -81,10 +85,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         principal=args.principal,
     )
 
-    if not args.local:
-        print("error: only --local is supported in this build; pass --local", file=sys.stderr)
-        return 2
+    if args.local:
+        return _run_local_cmd(args, request, schema)
+    return _run_cloud_cmd(args, request, schema)
 
+
+def _run_local_cmd(args: argparse.Namespace, request: RunRequest, schema: OutputSchema) -> int:
     ledger = budget = None
     if args.budget_bits is not None:
         ledger = FileLedger(home_dir() / "ledger.json")
@@ -92,8 +98,43 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     signer = load_or_create_dev_signer()
     outcome = run_local(request, signer, ledger=ledger, budget=budget)
-    r = outcome.result
+    _print_result(outcome.result, schema, budget, args.principal)
 
+    if args.save_attestation:
+        Path(args.save_attestation).write_text(outcome.attestation.model_dump_json(indent=2))
+        print(f"saved attestation -> {args.save_attestation}")
+
+    return 0 if outcome.result.status.value == "succeeded" else 3
+
+
+def _run_cloud_cmd(args: argparse.Namespace, request: RunRequest, schema: OutputSchema) -> int:
+    endpoint = api_endpoint()
+    if not endpoint:
+        print("error: set MARK1_API_ENDPOINT to the control-plane URL, or pass --local",
+              file=sys.stderr)
+        return 2
+
+    client = ApiClient(endpoint)
+    pending = client.create_run(request)
+    print(f"run:        {pending.run_id}  (submitted; polling…)")
+
+    deadline = time.time() + args.timeout + 180  # run time + cold start/queue headroom
+    result = pending
+    while result.status.value in ("pending", "running") and time.time() < deadline:
+        time.sleep(4)
+        result = client.get_run(pending.run_id)
+
+    _print_result(result, schema, None, args.principal)
+
+    if args.save_attestation and result.attestation_id:
+        att = client.get_attestation(result.run_id)
+        Path(args.save_attestation).write_text(json.dumps(att, indent=2))
+        print(f"saved attestation -> {args.save_attestation}")
+
+    return 0 if result.status.value == "succeeded" else 3
+
+
+def _print_result(r, schema: OutputSchema, budget, principal: str) -> None:
     print(f"run:        {r.run_id}")
     print(f"status:     {r.status.value}")
     print(f"bandwidth:  {bandwidth_bits(schema):.2f} bits (max that could leave)")
@@ -103,14 +144,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"withheld:   {r.withheld_reason}")
     if budget is not None and r.cumulative_exit_bits is not None:
         print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits used"
-              f" (principal '{args.principal}')")
+              f" (principal '{principal}')")
     print(f"attestation:{r.attestation_id}")
-
-    if args.save_attestation:
-        Path(args.save_attestation).write_text(outcome.attestation.model_dump_json(indent=2))
-        print(f"saved attestation -> {args.save_attestation}")
-
-    return 0 if r.status.value == "succeeded" else 3
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -121,6 +156,7 @@ def _cmd_verify(args: argparse.Namespace) -> int:
         return 2
     ok = verify_attestation(att, pubkey_path.read_bytes())
     print("VALID" if ok else "INVALID", f"attestation {att.attestation_id}")
+    print(f"  algorithm:  {att.algorithm}")
     print(f"  released:   {att.released}")
     print(f"  bandwidth:  {att.exit_bandwidth_bits:.2f} bits")
     print(f"  egress:     {att.egress_denied}/{att.egress_attempts} denied")

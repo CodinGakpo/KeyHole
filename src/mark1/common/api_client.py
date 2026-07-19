@@ -29,6 +29,9 @@ class ApiClient:
     def get_audit(self, run_id: str) -> dict[str, Any]:
         return self._get(f"/runs/{run_id}/audit")
 
+    def get_attestation(self, run_id: str) -> dict[str, Any]:
+        return self._get(f"/runs/{run_id}/attestation")
+
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
