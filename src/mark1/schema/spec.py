@@ -26,6 +26,7 @@ class SchemaType(str, enum.Enum):
     BOOLEAN = "boolean"
     ENUM = "enum"
     STRING = "string"
+    ARRAY = "array"
     OBJECT = "object"
 
 
@@ -52,6 +53,10 @@ class OutputSchema(BaseModel):
     charset: str | None = None  # explicit set of allowed characters; None => any byte (256)
     pattern: str | None = None  # optional regex the string must fully match
 
+    # ARRAY
+    items: OutputSchema | None = None
+    max_items: int | None = Field(default=None, ge=0)
+
     # OBJECT
     properties: dict[str, OutputSchema] | None = None
 
@@ -65,25 +70,36 @@ class OutputSchema(BaseModel):
                     raise ValueError(f"'{name}' is not valid for schema type '{t.value}'")
 
         if t in (SchemaType.INTEGER, SchemaType.NUMBER):
-            forbid("choices", "max_length", "charset", "pattern", "properties")
+            forbid("choices", "max_length", "charset", "pattern",
+                   "items", "max_items", "properties")
             if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
                 raise ValueError("minimum must be <= maximum")
         elif t is SchemaType.BOOLEAN:
-            forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern", "properties")
+            forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern",
+                   "items", "max_items", "properties")
         elif t is SchemaType.ENUM:
-            forbid("minimum", "maximum", "max_length", "charset", "pattern", "properties")
+            forbid("minimum", "maximum", "max_length", "charset", "pattern",
+                   "items", "max_items", "properties")
             if not self.choices:
                 raise ValueError("enum schema requires a non-empty 'choices' list")
             if len(self.choices) != len({_hashable(c) for c in self.choices}):
                 raise ValueError("enum 'choices' must be unique")
         elif t is SchemaType.STRING:
-            forbid("minimum", "maximum", "choices", "properties")
+            forbid("minimum", "maximum", "choices", "items", "max_items", "properties")
             if self.max_length is None:
                 raise ValueError("string schema requires 'max_length' (an unbounded string is a wide exit)")
             if self.charset is not None and len(self.charset) == 0:
                 raise ValueError("charset, if given, must be non-empty")
+        elif t is SchemaType.ARRAY:
+            forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern",
+                   "properties")
+            if self.items is None:
+                raise ValueError("array schema requires an 'items' schema")
+            if self.max_items is None:
+                raise ValueError("array schema requires 'max_items' (unbounded array = wide exit)")
         elif t is SchemaType.OBJECT:
-            forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern")
+            forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern",
+                   "items", "max_items")
             if not self.properties:
                 raise ValueError("object schema requires a non-empty 'properties' map")
             if len(self.properties) > MAX_OBJECT_PROPERTIES:

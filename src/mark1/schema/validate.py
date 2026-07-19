@@ -70,6 +70,19 @@ def validate_output(value: Any, schema: OutputSchema, _path: str = "$") -> Valid
             if schema.pattern is not None and re.fullmatch(schema.pattern, value) is None:
                 errs.append(f"{_path}: string does not match required pattern")
 
+    elif t is SchemaType.ARRAY:
+        assert schema.items is not None and schema.max_items is not None
+        if not isinstance(value, list):
+            errs.append(f"{_path}: expected array, got {_typename(value)}")
+        else:
+            if len(value) > schema.max_items:
+                errs.append(
+                    f"{_path}: array length {len(value)} exceeds max_items {schema.max_items}"
+                )
+            for i, elem in enumerate(value):
+                child = validate_output(elem, schema.items, f"{_path}[{i}]")
+                errs.extend(child.errors)
+
     elif t is SchemaType.OBJECT:
         assert schema.properties is not None
         if not isinstance(value, dict):

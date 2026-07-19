@@ -47,6 +47,12 @@ def bandwidth_bits(schema: OutputSchema) -> float:
         per_symbol = math.log2(symbols) if symbols > 1 else 0.0
         return schema.max_length * per_symbol
 
+    if t is SchemaType.ARRAY:
+        # Conservative upper bound: a full array of max_items max-entropy elements. Any array of
+        # <= max_items elements carries no more than this, so it is a valid upper bound.
+        assert schema.items is not None and schema.max_items is not None  # guaranteed by spec
+        return schema.max_items * bandwidth_bits(schema.items)
+
     if t is SchemaType.OBJECT:
         assert schema.properties is not None  # guaranteed by spec validation
         return sum(bandwidth_bits(child) for child in schema.properties.values())
