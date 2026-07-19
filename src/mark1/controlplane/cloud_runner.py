@@ -41,15 +41,25 @@ class CloudConfig:
     prefix: str = "runs"
 
 
-def run_cloud(
+@dataclass(frozen=True)
+class SubmitResult:
+    run_id: str
+    task_arn: str
+    input_key: str
+    output_key: str
+
+
+def submit_cloud(
     request: RunRequest,
     config: CloudConfig,
-    signer: Signer,
     run_id: str | None = None,
-    ledger: Ledger | None = None,
-    budget: BudgetPolicy | None = None,
-) -> tuple[GateOutcome, str]:
-    """Execute ``request`` on Fargate and return the gated outcome plus the task ARN."""
+) -> SubmitResult:
+    """Upload the input bundle, presign I/O, and launch the Fargate task. Does not wait.
+
+    Returns the coordinates a later :func:`finalize_cloud` needs. Splitting submit from finalize is
+    what lets the Lambda control plane fit inside API Gateway's request timeout: POST launches and
+    returns ``pending``; a later GET finalizes once the task has stopped.
+    """
     import boto3
 
     rid = run_id or f"run-{uuid.uuid4().hex}"
@@ -86,27 +96,69 @@ def run_cloud(
         env={"MARK1_INPUT_URL": input_url, "MARK1_OUTPUT_URL": output_url},
         ecs_client=ecs,
     )
+    return SubmitResult(run_id=rid, task_arn=task_arn, input_key=input_key, output_key=output_key)
 
-    ecs.get_waiter("tasks_stopped").wait(
-        cluster=config.cluster,
-        tasks=[task_arn],
-        WaiterConfig={"Delay": 6, "MaxAttempts": 100},
-    )
-    stopped_reason = _describe_stop(ecs, config.cluster, task_arn)
 
-    exec_result = _fetch_result(s3, config.bucket, output_key, stopped_reason)
+def task_is_stopped(config: CloudConfig, task_arn: str, ecs_client=None) -> bool:
+    """Whether the task has reached STOPPED (safe to finalize)."""
+    ecs = ecs_client or _boto("ecs", config.region)
+    tasks = ecs.describe_tasks(cluster=config.cluster, tasks=[task_arn]).get("tasks", [])
+    return bool(tasks) and tasks[0].get("lastStatus") == "STOPPED"
+
+
+def finalize_cloud(
+    request: RunRequest,
+    config: CloudConfig,
+    signer: Signer,
+    submit: SubmitResult,
+    ledger: Ledger | None = None,
+    budget: BudgetPolicy | None = None,
+) -> GateOutcome:
+    """Fetch the stopped task's output, run the exit gate, and clean up its S3 objects."""
+    s3 = _boto("s3", config.region)
+    ecs = _boto("ecs", config.region)
+
+    stopped_reason = _describe_stop(ecs, config.cluster, submit.task_arn)
+    exec_result = _fetch_result(s3, config.bucket, submit.output_key, stopped_reason)
     outcome = run_exit_gate(
-        rid, request, exec_result, signer, task_arn=task_arn, ledger=ledger, budget=budget
+        submit.run_id, request, exec_result, signer,
+        task_arn=submit.task_arn, ledger=ledger, budget=budget,
     )
 
     # Best-effort cleanup (the bucket lifecycle also expires these).
-    for key in (input_key, output_key):
+    for key in (submit.input_key, submit.output_key):
         try:
             s3.delete_object(Bucket=config.bucket, Key=key)
         except Exception:  # noqa: BLE001 - cleanup must not mask the result
             pass
 
-    return outcome, task_arn
+    return outcome
+
+
+def run_cloud(
+    request: RunRequest,
+    config: CloudConfig,
+    signer: Signer,
+    run_id: str | None = None,
+    ledger: Ledger | None = None,
+    budget: BudgetPolicy | None = None,
+) -> tuple[GateOutcome, str]:
+    """Submit, wait for the task to stop, and finalize — the synchronous convenience path."""
+    submit = submit_cloud(request, config, run_id=run_id)
+    ecs = _boto("ecs", config.region)
+    ecs.get_waiter("tasks_stopped").wait(
+        cluster=config.cluster,
+        tasks=[submit.task_arn],
+        WaiterConfig={"Delay": 6, "MaxAttempts": 100},
+    )
+    outcome = finalize_cloud(request, config, signer, submit, ledger=ledger, budget=budget)
+    return outcome, submit.task_arn
+
+
+def _boto(service: str, region: str):
+    import boto3
+
+    return boto3.client(service, region_name=region)
 
 
 def _describe_stop(ecs, cluster: str, task_arn: str) -> str | None:
