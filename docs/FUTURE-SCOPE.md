@@ -18,8 +18,10 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
   *Medium.*
 - **Differential-privacy exit mode.** Optional noise on numeric outputs so even the bounded answer
   doesn't reveal individual records. *Why:* addresses inference leakage. *Hard.*
-- **Schema-bandwidth budget enforcement.** Per-caller/day budget on total exit bits across runs, so
-  repeated small leaks can't accumulate. *Why:* defends the residual channel over time. *Medium.*
+- ✅ **Schema-bandwidth budget enforcement.** *Done* — a per-principal cumulative exit-bits ledger
+  (`controlplane/budget.py`) enforced at the exit gate, with an optional rolling window. Repeated
+  small leaks can no longer accumulate past the cap; proven by the `test_drip_exfiltration_over_runs`
+  hostile test. *Why:* defends the residual channel over time.
 - **Reproducible/deterministic execution.** Pin the environment and detect nondeterminism so an
   attestation is reproducible. *Why:* strengthens verifiability. *Medium.*
 
@@ -27,8 +29,10 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 - **Wider / free-form exit opt-in.** Explicitly downgraded to best-effort DLP, for callers who
   accept the trade-off. *Why:* flexibility. *Easy–Medium.* (Must be clearly labeled as a downgrade.)
-- **Richer schema types.** Arrays with bounded length, typed records, numeric tolerances, structured
-  extraction schemas. *Why:* covers more real tasks. *Medium.*
+- **Richer schema types.** ✅ *Bounded arrays done* (`array` with required `max_items` + `items`;
+  bandwidth = `max_items × item_bits`, so a list answer can't become a hidden wide exit). Still to
+  do: typed records, numeric tolerances, structured extraction schemas. *Why:* covers more real
+  tasks. *Medium.*
 - **Mediated data fetch (broker).** Let the box read a private DB/API through a broker that enforces
   access rules and logs everything — without granting the code general network. *Why:* removes the
   "upload all data first" constraint. *Hard.*

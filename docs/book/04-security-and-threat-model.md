@@ -54,6 +54,28 @@ released. A run whose output doesn't conform releases *nothing*. The exit's info
   number of bits. This is **bounded** (to the schema's bandwidth) and **disclosed** (the exact
   released bytes are attested). We never claim "zero leak."
 
+### Accumulation across runs — the cumulative budget
+
+The per-run bound says nothing about *repetition*. An adversary who can call the box N times, each
+run individually within schema, could drip out N × bandwidth bits over time — the per-run guarantee
+is silent on the total. Mark-1 closes this with a **per-principal cumulative exit-bandwidth budget**
+(`controlplane/budget.py`): a ledger records the bits released to each caller and, optionally, only
+within a rolling window (e.g. per day). At the exit gate, a conforming output is **withheld** once
+releasing it would push the caller's total past the cap. Only *released* runs spend budget — a
+withheld run leaks nothing, so it charges zero — and we charge the schema's conservative upper
+bound, never less. The `test_drip_exfiltration_over_runs` hostile test proves a repeated
+one-bit-per-run leak is capped no matter how many times the attacker calls. The budget is a
+guardrail recorded in the audit trail, deliberately *outside* the signed attestation, so the
+attestation schema and verifier stay stable.
+
+### List answers without a hidden wide exit — the bounded array
+
+Some real tasks return a short list (top-k labels, a few extracted fields). The `array` schema type
+supports this but requires a `max_items` bound, exactly as `string` requires `max_length`: an
+unbounded array would be a wide exit. Its bandwidth is `max_items × item_bits` — a conservative
+upper bound that is always finite and shown to the caller — so a list can never smuggle a dataset
+past the gate under the guise of "just a few items."
+
 ## What is explicitly out of scope (named, not hidden)
 
 - **Covert timing / resource side channels.** A script could modulate its runtime or resource use

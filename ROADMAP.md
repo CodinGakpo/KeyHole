@@ -18,6 +18,14 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
 
 ## Beyond the base
 
+**Shipped so far:**
+
+- ✅ **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
+  runs (optional rolling window), so drip exfiltration over many conforming runs is bounded, not
+  just each run. Proven by `test_drip_exfiltration_over_runs`.
+- ✅ **Bounded `array` schema type** — list-shaped answers with a required `max_items`, so their
+  exit bandwidth (`max_items × item_bits`) is always finite and disclosed.
+
 Grouped in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md): hardware-anchored attestation (Nitro),
 timing-channel mitigation, differential-privacy exit mode, wider/free-form exit opt-in, mediated
 private-data fetch, warm pools, a web dashboard, the multi-party clean room, and more. Every new
