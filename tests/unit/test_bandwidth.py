@@ -47,6 +47,30 @@ def test_object_sums_fields():
     assert bandwidth_bits(s) == 1.0 + 2.0
 
 
+def test_array_is_max_items_times_element_bits():
+    s = OutputSchema(
+        type=SchemaType.ARRAY,
+        max_items=3,
+        items=OutputSchema(type=SchemaType.STRING, max_length=4, charset="0123456789abcdef"),
+    )
+    assert bandwidth_bits(s) == 3 * 16.0  # 3 items * (4 chars * 4 bits)
+
+
+def test_array_nested_in_object_sums():
+    s = OutputSchema(
+        type=SchemaType.OBJECT,
+        properties={
+            "flag": OutputSchema(type=SchemaType.BOOLEAN),
+            "labels": OutputSchema(
+                type=SchemaType.ARRAY,
+                max_items=5,
+                items=OutputSchema(type=SchemaType.ENUM, choices=["a", "b", "c", "d"]),
+            ),
+        },
+    )
+    assert bandwidth_bits(s) == 1.0 + 5 * 2.0  # bool + 5 * log2(4)
+
+
 def test_narrow_exit_is_tiny_vs_a_dataset():
     # A 3-way classification can leak at most ~1.58 bits: far too little for a dataset.
     s = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])

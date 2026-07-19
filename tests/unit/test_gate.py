@@ -4,14 +4,17 @@ import json
 
 from mark1.attest.sign import Ed25519Signer
 from mark1.attest.verify import verify_attestation
-from mark1.common.models import DataFlowEvent, DataFlowEventKind, Limits, RunRequest
+from mark1.common.models import DataFlowEvent, DataFlowEventKind, Limits, RunRequest, utcnow
+from mark1.controlplane.budget import BudgetPolicy, InMemoryLedger
 from mark1.controlplane.gate import run_exit_gate
 from mark1.executor.entrypoint import ExecResult
 from mark1.schema.spec import OutputSchema, SchemaType
 
 
-def _request(schema: OutputSchema, **limit_kw) -> RunRequest:
-    return RunRequest(code="x", data={}, output_schema=schema, limits=Limits(**limit_kw))
+def _request(schema: OutputSchema, principal: str = "default", **limit_kw) -> RunRequest:
+    return RunRequest(
+        code="x", data={}, output_schema=schema, limits=Limits(**limit_kw), principal=principal
+    )
 
 
 def _exec(output, *, exit_code=0, timed_out=False, events=None, output_bytes=None) -> ExecResult:
@@ -96,3 +99,22 @@ def test_secret_in_output_is_caught_by_backstop():
     outcome = run_exit_gate("r7", _request(schema), _exec(leaked), signer)
     assert outcome.result.status.value == "withheld"
     assert "DLP" in outcome.result.withheld_reason
+
+
+def test_budget_withholds_a_conforming_output_once_the_cap_is_hit():
+    # A 2-choice enum is 1 bit/run; a 1-bit budget allows exactly one release, then withholds.
+    schema = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham"])
+    signer = Ed25519Signer.generate()
+    ledger, budget = InMemoryLedger(), BudgetPolicy(max_exit_bits=1.0)
+
+    req = _request(schema, principal="alice")
+    first = run_exit_gate("b1", req, _exec("spam"), signer, ledger=ledger, budget=budget)
+    assert first.result.status.value == "succeeded"
+    assert first.result.cumulative_exit_bits == 1.0
+
+    second = run_exit_gate("b2", req, _exec("ham"), signer, ledger=ledger, budget=budget)
+    assert second.result.status.value == "withheld"
+    assert second.result.output is None
+    assert "budget exceeded" in second.result.withheld_reason
+    # The over-budget run released nothing, so it must not have consumed any budget.
+    assert ledger.spent("alice", None, utcnow()) == 1.0
