@@ -146,6 +146,21 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         print("  crypto:     ok")
     except ImportError:
         print("  crypto:     MISSING (pip install cryptography)")
+    try:
+        import mcp  # noqa: F401
+        print("  mcp:        ok (mark1-mcp serves AI agents over stdio)")
+    except ImportError:
+        print("  mcp:        missing (pip install 'mark1[mcp]' to serve AI agents)")
+    try:
+        import boto3  # noqa: F401
+        print("  boto3:      ok (cloud runs available)")
+    except ImportError:
+        print("  boto3:      missing (pip install 'mark1[cloud]' for cloud runs)")
+    from mark1.common.config import dev_key_path
+    if dev_key_path().exists():
+        print("  dev key:    ok")
+    else:
+        print("  dev key:    absent (created on first run, or `sbx keygen`)")
     return 0
 
 
