@@ -1,9 +1,10 @@
 """End-to-end cloud smoke test: run an honest and a hostile program on real Fargate.
 
 Reads deployment coordinates from the environment (populated from `terraform output`) and runs
-two programs against the same private dataset under a 3-way classification schema:
+three programs against the same private dataset:
   1. honest classifier   -> a bounded, attested answer is released
   2. malicious exfiltrator -> nothing is released (structurally withheld), yet still attested
+  3. egress probe        -> proves the box has no internet path (returns False, released)
 
 Requires the `cloud` extra (boto3) and AWS credentials. Invoked by the M5 verification flow.
 """
@@ -35,6 +36,20 @@ import os, json
 json.dump(open("customers.csv").read(), open(os.environ["MARK1_OUTPUT"], "w"))
 """
 
+# Attempts real internet egress from inside the box; reports honestly whether it got out.
+# In the contained subnet (no NAT, endpoints-only SG) this must release False.
+EGRESS_PROBE = """
+import os, json, socket
+try:
+    socket.create_connection(("example.com", 443), timeout=5)
+    reached = True
+except OSError:
+    reached = False
+json.dump(reached, open(os.environ["MARK1_OUTPUT"], "w"))
+"""
+
+BOOL_SCHEMA = OutputSchema(type=SchemaType.BOOLEAN)
+
 
 def _config() -> CloudConfig:
     missing = [
@@ -54,10 +69,10 @@ def _config() -> CloudConfig:
     )
 
 
-def _run(name: str, code: str, config: CloudConfig) -> str:
+def _run(name: str, code: str, config: CloudConfig, schema: OutputSchema = SCHEMA):
     signer = load_or_create_dev_signer()
     req = RunRequest(
-        code=code, data={"customers.csv": DATASET}, output_schema=SCHEMA, limits=Limits(timeout_seconds=60)
+        code=code, data={"customers.csv": DATASET}, output_schema=schema, limits=Limits(timeout_seconds=60)
     )
     outcome, task_arn = run_cloud(req, config, signer)
     r = outcome.result
@@ -69,7 +84,7 @@ def _run(name: str, code: str, config: CloudConfig) -> str:
         print(f"  withheld:    {r.withheld_reason}")
     print(f"  bandwidth:   {r.exit_bandwidth_bits:.2f} bits")
     print(f"  attestation: {r.attestation_id} (signature {'VALID' if verified else 'INVALID'})")
-    return r.status.value
+    return r
 
 
 def main() -> int:
@@ -77,8 +92,16 @@ def main() -> int:
     print(f"Cloud smoke test on Fargate (cluster={config.cluster}, region={config.region})")
     honest = _run("honest classifier", HONEST, config)
     hostile = _run("malicious exfiltrator", MALICIOUS, config)
+    probe = _run("egress probe (expects False)", EGRESS_PROBE, config, schema=BOOL_SCHEMA)
 
-    ok = honest == "succeeded" and hostile == "withheld"
+    ok = (
+        honest.status.value == "succeeded"
+        and hostile.status.value == "withheld"
+        # The probe run must SUCCEED (a boolean is conforming) with output False:
+        # the network, not the gate, is what stops egress.
+        and probe.status.value == "succeeded"
+        and probe.output is False
+    )
     print("\nRESULT:", "PASS ✓" if ok else "FAIL ✗")
     return 0 if ok else 1
 
