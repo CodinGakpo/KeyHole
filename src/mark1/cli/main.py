@@ -20,6 +20,7 @@ from mark1.common.config import api_endpoint, dev_pubkey_path, home_dir
 from mark1.common.models import Limits, RunRequest
 from mark1.controlplane.budget import BudgetPolicy, FileLedger
 from mark1.controlplane.runner import run_local
+from mark1.controlplane.store import FileStore
 from mark1.schema.bandwidth import bandwidth_bits
 from mark1.schema.spec import OutputSchema
 
@@ -66,6 +67,11 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check the local environment")
     doctor.set_defaults(func=_cmd_doctor)
 
+    dash = sub.add_parser("dashboard", help="serve the local run/audit/attestation dashboard")
+    dash.add_argument("--port", type=int, default=8787, help="port to serve on (default 8787)")
+    dash.add_argument("--pubkey", help="verifier public-key PEM (defaults to the local dev pubkey)")
+    dash.set_defaults(func=_cmd_dashboard)
+
     return p
 
 
@@ -98,6 +104,13 @@ def _run_local_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
 
     signer = load_or_create_dev_signer()
     outcome = run_local(request, signer, ledger=ledger, budget=budget)
+
+    # Persist to the local store so `sbx dashboard` has a history to show.
+    store = FileStore()
+    store.put_result(outcome.result)
+    store.put_audit(outcome.audit)
+    store.put_attestation(outcome.attestation)
+
     _print_result(outcome.result, schema, budget, args.principal)
 
     if args.save_attestation:
@@ -161,6 +174,21 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     print(f"  bandwidth:  {att.exit_bandwidth_bits:.2f} bits")
     print(f"  egress:     {att.egress_denied}/{att.egress_attempts} denied")
     return 0 if ok else 1
+
+
+def _cmd_dashboard(args: argparse.Namespace) -> int:
+    from mark1.dashboard.server import serve
+
+    pubkey_path = Path(args.pubkey) if args.pubkey else dev_pubkey_path()
+    pubkey_pem = pubkey_path.read_bytes() if pubkey_path.exists() else None
+
+    store = FileStore()
+    url = f"http://127.0.0.1:{args.port}"
+    print(f"Mark-1 dashboard on {url}  (reading ~/.mark1/store; Ctrl-C to stop)")
+    if pubkey_pem is None:
+        print("  note: no public key found — signatures will show as unverified")
+    serve(store, pubkey_pem, port=args.port)
+    return 0
 
 
 def _cmd_keygen(args: argparse.Namespace) -> int:
