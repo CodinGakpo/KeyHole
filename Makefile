@@ -1,4 +1,4 @@
-.PHONY: help install test unit hostile lint fmt typecheck demo clean
+.PHONY: help install test unit hostile lint fmt typecheck demo lambda-zip clean
 
 help:
 	@echo "make install   - editable install with dev extras"
@@ -8,6 +8,7 @@ help:
 	@echo "make lint      - ruff check"
 	@echo "make fmt       - ruff format"
 	@echo "make demo      - run the local end-to-end demo"
+	@echo "make lambda-zip- build dist/controlplane.zip for the control-plane Lambda"
 
 install:
 	python -m pip install -e '.[dev]'
@@ -32,6 +33,9 @@ typecheck:
 
 demo:
 	python scripts/demo.py
+
+lambda-zip:
+	python scripts/build_lambda.py
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache **/__pycache__
