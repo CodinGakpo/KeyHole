@@ -42,10 +42,13 @@ The base (M0–M8) is complete and verified:
 
 - **Local:** the full pipeline (typed exit, bandwidth accounting, exit gate, DLP backstop, ed25519
   attestation, cumulative budget) runs today via `sbx run --local`, `make demo`, and the MCP server.
-- **Cloud:** proven end-to-end on real Fargate — the honest classifier's answer released and
-  attested, the exfiltrator withheld and attested — inside a no-NAT private subnet with an
-  endpoints-only security group and an **empty task IAM role**. The whole stack stands up with one
-  `terraform apply` and tears down to zero (idle cost ≈ $0; a run costs pennies).
+- **Cloud:** a full **deployable API** — `terraform apply` stands up a Lambda + API Gateway control
+  plane, DynamoDB (append-only audit), and a **KMS signing key** (the attestation private key never
+  leaves KMS). `sbx run` (without `--local`) submits to the API and polls to completion. Proven
+  end-to-end on real AWS — honest answer released + KMS-attested, exfiltrator withheld, attestation
+  **VALID** against the exported KMS public key — all inside a no-NAT private subnet with an
+  endpoints-only security group and an **empty task IAM role**. Tears down to zero (idle ≈ $0 apart
+  from the ~$1/mo KMS key; a run costs pennies).
 - **Adversarial:** `tests/hostile/` (dump, encode-in-bounded-string, stdout, fork bomb, memory hog,
   drip-exfiltration-across-runs) all structurally blocked; the MCP transport is integration-tested
   end-to-end.
@@ -106,6 +109,24 @@ Any other MCP host, via generic stdio config:
 ```json
 { "mcpServers": { "mark1": { "command": "mark1-mcp" } } }
 ```
+
+## Deploy the cloud API (your AWS account)
+
+```bash
+make lambda-zip                                    # build dist/controlplane.zip
+cd infra/terraform/environments/dev
+terraform apply -var enable_control_plane=true -var enable_egress_endpoints=true
+#   → outputs: api_endpoint, kms_key_id, …   (push the sandbox image to the ECR repo once)
+
+export MARK1_API_ENDPOINT="https://<id>.execute-api.<region>.amazonaws.com/"
+sbx run classify.py --data emails.csv=./emails.csv --schema schemas/label.json \
+    --save-attestation att.json                    # submit → poll → released + KMS-attested
+aws kms get-public-key --key-id <kms_key_id> ...   # export the public key as PEM
+sbx verify att.json --pubkey kms.pem               # VALID, algorithm: ecdsa-p256-sha256
+```
+
+The KMS signing key is ~$1/month; Lambda + API Gateway + DynamoDB are free/pennies at this scale.
+`terraform destroy` returns the account to ≈ $0.
 
 ## Layout
 
