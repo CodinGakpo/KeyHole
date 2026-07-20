@@ -155,6 +155,9 @@ def run_exit_gate(
         egress_denied=egress_denied,
         exit_code=exec_result.exit_code,
         released=released,
+        data_owner=request.data_owner,
+        code_provider=request.principal,
+        dataset_id=request.dataset_id,
     )
     attestation = sign_attestation(attestation, signer)
 
@@ -177,6 +180,9 @@ def run_exit_gate(
         data_sha256=data_sha,
         schema_sha256=schema_sha,
         output_sha256=output_sha,
+        data_owner=request.data_owner,
+        code_provider=request.principal,
+        dataset_id=request.dataset_id,
         exit_bandwidth_bits=bandwidth,
         cumulative_exit_bits=cumulative_exit_bits,
         egress_attempts=egress_attempts,

@@ -34,6 +34,10 @@ class Attestation(BaseModel):
     egress_denied: int
     exit_code: int | None
     released: bool
+    # Clean-room identities (who ran whose data). Single-principal runs leave owner/dataset None.
+    data_owner: str | None = None
+    code_provider: str | None = None
+    dataset_id: str | None = None
 
     # --- signature envelope (not signed) ---
     algorithm: str = "unsigned"
@@ -64,4 +68,7 @@ def build_claims(att: Attestation) -> dict[str, Any]:
         "egress_denied": att.egress_denied,
         "exit_code": att.exit_code,
         "released": att.released,
+        "data_owner": att.data_owner,
+        "code_provider": att.code_provider,
+        "dataset_id": att.dataset_id,
     }
