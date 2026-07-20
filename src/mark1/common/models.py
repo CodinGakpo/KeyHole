@@ -44,7 +44,9 @@ class RunRequest(BaseModel):
     data: dict[str, str] = Field(default_factory=dict)  # filename -> contents supplied into the box
     output_schema: OutputSchema
     limits: Limits = Field(default_factory=Limits)
-    principal: str = "default"  # caller identity the cumulative exit-bandwidth budget is keyed on
+    principal: str = "default"  # the CODE-PROVIDER identity; the exit-bandwidth budget is keyed on it
+    data_owner: str | None = None  # clean room: who owns the dataset (None for inline self-supplied data)
+    dataset_id: str | None = None  # clean room: the registered dataset this run reads (None if inline)
 
 
 class DataFlowEventKind(str, enum.Enum):
@@ -87,6 +89,9 @@ class AuditRecord(BaseModel):
     data_sha256: str
     schema_sha256: str
     output_sha256: str | None = None
+    data_owner: str | None = None
+    code_provider: str | None = None
+    dataset_id: str | None = None
     exit_bandwidth_bits: float | None = None
     cumulative_exit_bits: float | None = None  # principal's total released bits (if budgeted)
     egress_attempts: int = 0
