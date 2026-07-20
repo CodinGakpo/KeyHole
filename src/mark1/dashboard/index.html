@@ -201,6 +201,14 @@ async function detail(id){
       <div class="cell"><div class="k">duration</div><div class="v">${r.duration_ms!=null?r.duration_ms+' ms':'&mdash;'}</div></div>
     </div>
 
+    ${at&&at.dataset_id?`
+    <div class="section-h">clean room &mdash; who ran whose data</div>
+    <div class="grid">
+      <div class="cell"><div class="k">data owner</div><div class="v">${esc(at.data_owner)}</div></div>
+      <div class="cell"><div class="k">code provider</div><div class="v">${esc(at.code_provider)}</div></div>
+      <div class="cell"><div class="k">dataset</div><div class="v">${esc(at.dataset_id)}</div></div>
+    </div>`:''}
+
     <div class="section-h">bound hashes${at?' &mdash; '+esc(at.algorithm):''}</div>
     <div class="hashes">
       ${hashRow('code',a&&a.code_sha256)}
