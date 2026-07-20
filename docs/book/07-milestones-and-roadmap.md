@@ -20,6 +20,21 @@ bill near zero.
 | **M8 — Polish** ✅ | Truthful README (status, mermaid architecture diagram, `make demo` transcript, MCP setup), ARCHITECTURE.md corrected to as-built, `sbx doctor` checks the mcp/cloud extras + dev key. | Make it legible and installable. |
 | **M9 — Cloud control plane (beyond base)** ✅ | Lambda + API Gateway HTTP API with an **async submit/poll** lifecycle (fits the ~29s gateway timeout despite Fargate cold start), DynamoDB persistence (append-only audit), and **KMS-signed attestations** (ECDSA P-256; private key never leaves KMS). `sbx run` without `--local` drives the API. Verified live end-to-end then destroyed: honest released + KMS-attested, exfil withheld, attestation VALID vs the exported KMS public key (tamper → INVALID). | Makes the "one `terraform apply` → a confidential-execution API in your own account" pitch literally true. |
 
+## Beyond the base (shipped)
+
+- **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
+  runs, so drip exfiltration over many conforming runs is bounded too.
+- **Bounded `array` schema type** — list answers with a required `max_items`, bandwidth still finite.
+- **Web dashboard** (`sbx dashboard`) — a self-contained, read-only viewer of the run/audit trail
+  whose signature element is the exit-bandwidth aperture gauge.
+- **Multi-party clean room** — the enterprise form of the thesis. A **data-owner** registers a
+  dataset (`sbx dataset add`) and grants a **code-provider** (`sbx dataset grant`); the provider runs
+  against it by id + grant token (`sbx run --dataset --grant`) and **never receives the bytes**. The
+  attestation binds *both* identities plus the dataset hash, so the owner gets proof of who ran what
+  on their data and how little left. Ungranted providers are refused before anything runs; the
+  bandwidth guarantee holds across principals. Local MVP — grants are bearer tokens (production:
+  signed + time-boxed); infra-level IAM separation is the cloud follow-up.
+
 ## Definition of done for the base
 
 `sbx run classify.py --data emails.csv --schema label.json` runs untrusted Python on the supplied

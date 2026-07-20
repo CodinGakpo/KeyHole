@@ -64,8 +64,14 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## E. Product / go-to-market
 
-- **Multi-party clean room.** Model data-owner and code-provider as separate principals — "let an
-  external party's AI run on MY data." *Why:* the real enterprise product. *Hard.*
+- ✅ **Multi-party clean room.** *Done (local MVP)* — a data-owner registers a dataset
+  (`sbx dataset add`), grants a code-provider (`sbx dataset grant`), and the provider runs against it
+  by id + grant token **without ever receiving the bytes** (`sbx run --dataset --grant`). The
+  attestation binds **both identities + the dataset hash**, so the owner gets proof of who ran what
+  on their data and how little left. Ungranted providers are refused before anything runs; the
+  bandwidth guarantee holds across principals (see `tests/hostile/test_cleanroom_hostile.py`).
+  *Follow-ups:* signed/time-boxed grants and infra-level separation (the provider's IAM cannot read
+  the dataset's S3). *Why:* the real enterprise product.
 - **Multi-tenant auth & orgs.** Beyond the single-deployer base. *Medium.*
 - **Compliance mappings.** Map the attestation + audit trail to SOC2 / HIPAA / GDPR controls. *Why:*
   what regulated buyers actually need. *Medium.*

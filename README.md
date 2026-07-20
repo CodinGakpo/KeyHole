@@ -156,6 +156,34 @@ element is the **exit-bandwidth aperture**: a log-scale gauge that plots a run's
 sbx dashboard            # → http://127.0.0.1:8787   (Ctrl-C to stop)
 ```
 
+## Multi-party clean room
+
+The strongest form of the thesis: *let an external party's AI run on **your** data, and get proof
+of exactly what left.* The data-owner and the code-provider are separate principals — the provider
+references the dataset by id and **never receives the bytes**, and the attestation binds both
+identities plus the dataset hash.
+
+```bash
+# Data-owner: register a dataset, then grant a specific code-provider.
+sbx dataset add customers.csv=./customers.csv --owner acme      # → ds-1eebc2b917c4
+sbx dataset grant ds-1eebc2b917c4 --to partner-ai               # → grant-… (a bearer token)
+
+# Code-provider: run against the dataset by id + grant. They never see the data.
+sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… \
+    --principal partner-ai --schema schemas/label.json
+# → succeeded   output: "spam"   attestation binds {acme, partner-ai, ds-1eebc2b917c4}
+
+# An un-granted provider is refused before anything runs:
+sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… --principal intruder …
+# → refused: grant does not authorize provider 'intruder' (nothing ran; data never materialized)
+```
+
+The owner can then `sbx verify` the returned attestation: *provider `partner-ai` ran this code on
+dataset `ds-1eebc2b917c4` (hash matches what I registered), zero egress, and only `"spam"` came out.*
+This is a **local MVP** of the model — grant tokens are unguessable bearer capabilities (a
+production grant would be signed and time-boxed), and infra-level principal separation (the
+provider's IAM cannot read the dataset's S3) is the noted cloud hardening step.
+
 ## Layout
 
 | Path | What |

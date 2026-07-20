@@ -20,6 +20,10 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
 
 **Shipped so far:**
 
+- ✅ **Multi-party clean room** — a data-owner registers a dataset and grants a code-provider, who
+  runs code against it by id + grant token without receiving the bytes; the attestation binds both
+  identities + the dataset hash. Ungranted providers are refused; cross-principal exfiltration is
+  withheld. (`sbx dataset add/grant`, `sbx run --dataset --grant`.)
 - ✅ **Web dashboard** — `sbx dashboard` serves a self-contained, read-only viewer (stdlib
   `http.server`) over the local run history: ledger, per-run inspector (hashes, verdict, data-flow
   timeline), an exit-bandwidth aperture gauge, and drag-to-verify attestation checking.
