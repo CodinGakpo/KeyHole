@@ -1,67 +1,107 @@
-# Mark-1 — Study Guide
+# Keyhole — Study Guide
 
-Everything you need to defend this project inside-out, grounded in the actual code (file:line
-references are real — open them as you read). Work through it top to bottom; it's ordered from
-"the one idea" outward to the details.
+How to present and defend this project. The order matters: **sell the problem first, then the
+idea, then prove it, then go deep where they choose.** Parts 0–2 are what you say; Parts 3–8 are
+what you need to know when they dig; Parts 9–11 are drills.
 
-Companion docs: the **decision book** (`docs/book/00`→`09`) is the *why* behind every choice; this
-guide is the *what* and *how* with code pointers. `DEMO.md` is the live-demo runbook.
-
----
-
-## Part 0 — The one paragraph (memorize this cold)
-
-> Isolation sandboxes (E2B, Modal, AWS AgentCore) protect the **host** from untrusted code — they
-> stop code escaping the box. They do nothing about code that legitimately reads your data and then
-> **leaks** it. Mark-1 protects the **data** from the code. Untrusted code may return **only** a
-> value matching a caller-declared **narrow schema** (an enum, a bounded int, a small object). If
-> the widest that exit can carry is 1.58 bits and the dataset is 20 KB, bulk exfiltration is
-> **mathematically impossible, not scanned-for**. Every run emits a **signed attestation** proving
-> exactly what code ran on exactly what data, with zero network egress, and exactly what bounded
-> value came out — verifiable by anyone, offline.
-
-The single sentence under that: **"Confidentiality as a bandwidth argument, not a content scan."**
+File:line references are real — open them as you read. Companion docs: `docs/book/00`→`09` is the
+*why* behind every choice; `DEMO.md` is the live-demo runbook.
 
 ---
 
-## Part 1 — The five core concepts
+## Part 0 — The pitch (memorize the shape, not the words)
 
-You must be able to explain each of these in ~30 seconds without notes.
+Engineers lose audiences by explaining the mechanism before anyone feels the problem. Always go:
+**pain → why tools miss it → the one idea → proof → "where do you want to go deeper?"**
 
-### 1.1 The confinement problem (Lampson, 1973)
-You can *never* perfectly stop a program that can see secret data from signaling *some* of it out
-(via timing, resource use, its own legitimate output, etc.). This is a proven impossibility. So we
-**do not claim zero leak** — that would be a lie an interviewer could destroy. We claim the leak is
-**bounded to a number the caller chose and the attestation discloses.** This honesty is a strength:
-it shows you understand the theory. (Book ch. 4.)
+### The 30-second version
 
-### 1.2 The typed narrow exit
+> "AI agents increasingly write and run code on data they shouldn't be able to take away —
+> customer records, patient data, a partner's dataset. Today's sandboxes stop that code from
+> breaking out, but they hand back whatever it returns, so the data walks out inside the answer.
+> Keyhole flips it: before the code runs, you declare the shape of the answer — say, one of three
+> labels. That's 1.58 bits; the customer file is 3,300 bits. It physically doesn't fit. A per-caller
+> budget caps the total over many runs, and every run produces a signed receipt anyone can verify.
+> I built it end to end, including a locked-down AWS deployment with KMS signing."
+
+### The 2-minute version (five beats)
+
+1. **Pain (20s).** "A hospital wants a vendor's AI to score its patient records. Today one side
+   hands over its crown jewels — the hospital ships the data, or the vendor ships the model. With AI
+   agents it's worse: the code was generated seconds ago and nobody reviewed it."
+2. **Why tools miss it (15s).** "Sandboxes like E2B or Modal protect the *host* from the code. They
+   return everything the code produces. The data leaks through the front door — the answer."
+3. **The idea (15s).** "Keyhole — you can look through a keyhole, you can't carry the furniture out.
+   You declare the answer's shape up front. Three labels is 1.58 bits. It's a limit on *size*, not a
+   search for *content*, so encrypting the data first doesn't help the attacker."
+4. **Proof (60s).** `make showtime` — let the visuals talk. Don't narrate what's on screen.
+5. **Hand over (10s).** "I can go into the drip attack, the signed receipts, how the AWS network is
+   sealed, or a hole I found in my own design. Where do you want to go?"
+
+Beat 5 turns a presentation into a conversation where you're the expert. Whatever they pick, you
+have a part of this guide for it.
+
+**The single sentence under all of it:** *Confidentiality as a bandwidth argument, not a content
+scan.*
+
+---
+
+## Part 1 — Positioning: never say "no equivalent"
+
+A sharp interviewer will name a neighbor. If you claimed nothing like this exists, you lose
+credibility on the spot. Claim the *combination* and show you know the field:
+
+> "I didn't invent bounded leakage — it's an old idea from information-flow research, and
+> differential privacy has a similar budget concept. What I built makes it a practical primitive for
+> the case nothing else covers: untrusted or AI-written code, on private data, with a receipt."
+
+| Neighbor | What it protects | The one-line distinction |
+|---|---|---|
+| **Sandboxes** (E2B, Modal, AgentCore, Firecracker) | host from code | "They contain the code; I constrain what it can *say*." |
+| **TEEs** (Nitro Enclaves, SGX) | data from the operator | "They hide data from the cloud; the code inside can still return it. Complementary — Nitro is my roadmap for the signer." |
+| **Data clean rooms** | data from queries | "They restrict SQL-style analyses; I allow arbitrary code and restrict the exit." |
+| **DLP** | known patterns | "Encrypt-before-emit defeats any content scan. A bit limit can't be defeated by encoding." |
+| **Differential privacy** | individuals in aggregates | "DP bounds what statistics reveal about a person; I bound how many bits any code can emit. Both use a budget." |
+| **Quantitative information flow** (research) | — | "That's the theory my bandwidth number comes from: leakage measured in bits." |
+
+Knowing the neighbors makes you sound *more* original, not less.
+
+---
+
+## Part 2 — The five core concepts
+
+Each in ~30 seconds, without notes. Say them in this order — it's a chain:
+**narrow schema → small bandwidth → bulk exfil impossible per run → budget bounds it across runs →
+attestation proves it all happened.**
+
+### 2.1 The confinement problem (Lampson, 1973)
+You can *never* perfectly stop a program that sees secret data from signaling *some* of it out
+(timing, resource use, its own legitimate output). That's a known impossibility. So we **don't
+claim zero leak** — an interviewer would destroy that. We claim the leak is **bounded to a number
+the caller chose and the attestation discloses.** This honesty is a strength. (Book ch. 4.)
+
+### 2.2 The typed narrow exit
 The caller declares, *in advance*, the exact shape of the one value the code may return: an enum, a
 bounded integer, a length-bounded string, a bounded array, or a small closed object. Anything that
-doesn't match is **not released** — nothing leaves. Code: `src/mark1/schema/spec.py`.
+doesn't match is **not released**. Code: `src/keyhole/schema/spec.py`.
 
-### 1.3 Exit bandwidth (the quantitative guarantee)
-Every schema has a computable **upper bound in bits** on how much can leave through one conforming
-value. A 3-way enum = log₂(3) ≈ **1.58 bits**. That number *is* the guarantee, made numeric. Code:
-`src/mark1/schema/bandwidth.py`.
+### 2.3 Exit bandwidth (the quantitative guarantee)
+Every schema has a computable **upper bound in bits** on what one conforming value can carry. A
+3-way enum = log₂(3) ≈ **1.58 bits**. That number *is* the guarantee. Code:
+`src/keyhole/schema/bandwidth.py`.
 
-### 1.4 The cumulative budget (drip defense)
-One run leaks ≤ N bits. But calling 10,000 times, encoding a bit each time, leaks 10,000 bits. So a
-**per-principal ledger** caps *total* released bits across all runs. Code:
-`src/mark1/controlplane/budget.py`.
+### 2.4 The cumulative budget (drip defense)
+One run leaks ≤ N bits; 10,000 runs leak 10,000 × N. A **per-principal ledger** caps the total
+released bits across runs. Code: `src/keyhole/controlplane/budget.py`. (Its known gap: Part 7.)
 
-### 1.5 The attestation
-A signed record binding: code hash, data hash, schema hash, the exact output, the bandwidth, the
-egress verdict, and (clean room) the owner/provider/dataset identities. Anyone with the public key
-can verify it offline; tampering any field breaks the signature. Code: `src/mark1/attest/`.
-
-**The chain of reasoning that ties them together (say it in this order):**
-narrow schema → small bandwidth → bulk exfil structurally impossible per run → budget bounds it
-across runs → attestation proves all of the above happened.
+### 2.5 The attestation
+A signed record binding the code hash, data hash, schema hash, the exact output, the bandwidth, the
+egress verdict, and (clean room) the owner/provider/dataset. Anyone with the public key verifies it
+offline; tampering any field breaks the signature. Code: `src/keyhole/attest/`.
 
 ---
 
-## Part 2 — Architecture in one picture
+## Part 3 — Architecture in one picture
 
 ```
    caller (CLI / MCP / HTTP API)
@@ -85,306 +125,295 @@ across runs → attestation proves all of the above happened.
  └────────────────────────────────────────────────────────────────────────┘
 ```
 
-**The single most important architectural fact:** the untrusted code runs in **one trust domain**
-(the sandbox — locally a subprocess, in cloud a Fargate task); the **exit gate runs in a different
-trust domain** (the control plane). The code has *total freedom inside the box* and *zero authority
-over the gate*. That separation is why the attacker can't "just change the schema" — it's on the
-wrong side of the boundary.
+**The most important architectural fact:** the untrusted code runs in **one trust domain** (the
+sandbox — locally a subprocess, in the cloud a Fargate task); the **exit gate runs in another** (the
+control plane). The code has *total freedom inside the box* and *zero authority over the gate*.
+That's why the attacker can't "just change the schema" — it's on the wrong side of the boundary.
 
-**The key invariant:** the *only* channel out of the box is the value written to the file named by
-the `MARK1_OUTPUT` env var. stdout, stderr, temp files, memory — none of them leave. The gate
-stands on that one file.
+**The key invariant:** the *only* channel out of the box is the file named by the `KEYHOLE_OUTPUT`
+env var. stdout, stderr, temp files, memory — none of them leave. (Run *status* is the exception —
+see Part 7.)
+
+**Be precise about local vs cloud.** Locally the code is an rlimited subprocess and *can* reach the
+network; the local run demonstrates the exit gate. Network containment is the cloud layer's job
+(Part 6). Never claim the local demo is network-isolated.
 
 ---
 
-## Part 3 — Trace ONE run end-to-end (the code walk you must know)
+## Part 4 — Trace ONE run end to end (the code walk you must know)
 
-This is the "open the files and narrate" skill. Follow a single honest local run.
+The "open the files and narrate" skill. Follow a single honest local run.
 
 **Step 1 — the request.** `RunRequest` (`common/models.py:40`) carries `code` (untrusted Python
-source, a string), `data` (`dict[filename → contents]`), `output_schema`, `limits`, and `principal`
-(the code-provider identity the budget is keyed on). This model is the *shared contract* every
-component speaks (CLI, MCP, control plane, executor all import it).
+source), `data` (`dict[filename → contents]`), `output_schema`, `limits`, and `principal` (the
+code-provider identity the budget is keyed on). It's the *shared contract* every component speaks.
 
-**Step 2 — execution.** `executor/entrypoint.py:run_code` →`_run_in` (line 47):
+**Step 2 — execution.** `executor/entrypoint.py:run_code` → `_run_in` (line 47):
 - writes each data file into a temp workdir (`work / Path(name).name` — flattened so a filename like
   `../etc/passwd` can't escape, line 53);
-- writes the code to `__mark1_code__.py`;
-- sets a **minimal env** (line 63): `MARK1_OUTPUT` = the output path, `PATH`, and *deliberately no
-  AWS creds/metadata* — belt-and-suspenders even though the cloud task role is already empty;
-- runs `python -I` (isolated mode) as a subprocess (line 73) with a **timeout** and a
-  `preexec_fn` that applies rlimits;
-- after exit, reads whatever is at `MARK1_OUTPUT` — that's `output_raw`. Returns an `ExecResult`
-  (raw output, exit code, stdout/stderr, duration, `timed_out`, byte count, data-flow events).
+- writes the code to `__keyhole_code__.py`;
+- sets a **minimal env** (line 63): `KEYHOLE_OUTPUT`, `PATH`, and *deliberately no AWS
+  creds/metadata* — belt and braces even though the cloud task role is empty;
+- runs `python -I` (isolated mode) as a subprocess (line 73) with a **timeout** and a `preexec_fn`
+  that applies rlimits;
+- reads whatever is at `KEYHOLE_OUTPUT` — that's `output_raw` — and returns an `ExecResult`.
 
-Note: the executor **does not judge** the output. It just captures it. Judging is the gate's job.
+The executor **does not judge** the output. Judging is the gate's job.
 
-**Step 3 — the exit gate.** `controlplane/gate.py:run_exit_gate` (line 51). Read this function
-top-to-bottom; the ordering *is* the thesis (the docstring says so, line 4). It computes the three
-hashes (code/data/schema, lines 71-73), counts egress attempts, then the decision cascade:
-- timed out? → `TIMEOUT`, withheld (line 91)
+**Step 3 — the exit gate.** `controlplane/gate.py:run_exit_gate` (line 51). Read it top to bottom;
+the ordering *is* the thesis (docstring, line 4). It hashes code/data/schema (lines 71-73), counts
+egress attempts, then the decision cascade:
+- timed out? → `TIMEOUT` (line 91)
 - non-zero exit? → `FAILED` (line 94)
 - no output file? → `FAILED` (line 97)
 - output bigger than `max_output_bytes`? → `WITHHELD` (line 100)
 - not valid JSON? → `WITHHELD` (line 109)
-- **doesn't match the schema?** → `WITHHELD` (line 114) ← *this is the exfiltrator's fate*
+- **doesn't match the schema?** → `WITHHELD` (line 114) ← *the exfiltrator's fate*
 - DLP backstop flags a secret/PII? → `WITHHELD` (line 123)
 - over cumulative budget? → `WITHHELD` (line 129)
-- **else → `SUCCEEDED`, released = True** (line 136), and the budget ledger is charged (line 141).
+- **else → `SUCCEEDED`, released** (line 136), and the ledger is charged (line 141).
 
-**Step 4 — validation.** `schema/validate.py:validate_output` (line 33). **Strict, no coercion**
-(loose coercion would silently widen the exit — line 4). Note the subtlety at lines 116-125: a
-Python `bool` is *not* accepted as an `int`/`number` (bool is a subclass of int in Python, so they
-exclude it explicitly). Objects are **closed** — undeclared properties are rejected (line 93).
+**Step 4 — validation.** `schema/validate.py:validate_output` (line 33). **Strict, no coercion** —
+loose coercion would silently widen the exit (line 4). Subtlety at lines 116-127: a Python `bool` is
+*not* accepted as an `int`/`number` (bool subclasses int, so it's excluded explicitly). Objects are
+**closed** — undeclared properties are rejected (line 96).
 
 **Step 5 — bandwidth.** `schema/bandwidth.py:bandwidth_bits` (line 23). Enum → log₂(n) (line 33).
 Bounded int → log₂(span) (line 37). String → `max_length × log₂(charset size)` (line 48). Array →
 `max_items × bandwidth(items)` (line 54). Object → sum of children (line 58). Unbounded scalars fall
-back to fixed machine widths (64 bits) — **conservative: it always overstates the channel, never
-understates** (line 9). That conservatism is the honest choice.
+back to 64 bits — **conservative: always overstates the channel, never understates** (line 9).
 
 **Step 6 — attestation.** `attest/record.py`: the `Attestation` model (line 15). The **signed
-claims** are exactly the fields in `build_claims` (line 55) — the hashes, the output, the bandwidth,
-the egress counts, `released`, and the three clean-room identities. The signature envelope
-(`algorithm`, `key_id`, `signature`) is explicitly **not** signed (it carries the signature). Signed
-via `attest/sign.py:sign_attestation` (line 80) — canonical JSON bytes → `signer.sign()`.
+claims** are exactly the fields in `build_claims` (line 55). The envelope (`algorithm`, `key_id`,
+`signature`) is not signed — it carries the signature. Signed via `attest/sign.py:sign_attestation`
+(line 80): canonical JSON bytes → `signer.sign()`.
 
-**Step 7 — the result.** The gate returns a `GateOutcome` = `RunResult` (what the caller sees) +
-`Attestation` + `AuditRecord` (the append-only trail). Done.
+**Step 7 — the result.** `GateOutcome` = `RunResult` (what the caller sees) + `Attestation` +
+`AuditRecord` (the append-only trail).
 
-> Rehearse this as a 2-minute spoken walk. If you can narrate steps 2→3→4 confidently, you've
-> covered 70% of any code question.
+> Rehearse this as a 2-minute spoken walk. Steps 2→3→4 cover 70% of any code question.
 
 ---
 
-## Part 4 — Subsystem deep-dives
+## Part 5 — Subsystem deep dives
 
-### 4.1 Schema (`schema/spec.py`)
-`OutputSchema` is a pydantic model with `extra="forbid"` (line 40) — you can't sneak extra fields.
-A `model_validator` (line 63) enforces that only the fields relevant to the `type` are set, so a
-schema **can't be quietly under-constrained** (an under-constrained schema = a wide exit). Key
-guardrails: a string **must** declare `max_length` ("an unbounded string is a wide exit", line 90);
-an array **must** declare `max_items` (line 99); an object caps at `MAX_OBJECT_PROPERTIES = 16`
-(line 18/105). This is where "narrow" is *enforced*, not just hoped for.
+### 5.1 Schema (`schema/spec.py`)
+`OutputSchema` is a pydantic model with `extra="forbid"` (line 40) — no sneaking in extra fields. A
+`model_validator` (line 63) allows only the fields relevant to the `type`, so a schema **can't be
+quietly under-constrained** (under-constrained = wide exit). Guardrails: a string **must** declare
+`max_length` (line 93); an array **must** declare `max_items` (line 104); an object caps at
+`MAX_OBJECT_PROPERTIES = 16` (lines 18/111). This is where "narrow" is *enforced*.
 
-### 4.2 The DLP backstop (`dlp/`)
-`scan_secrets` + `scan_pii` run on the *serialized conforming output* (gate.py:121). **Important
-framing:** this is a *secondary* backstop, **not** the guarantee. The guarantee is the bandwidth
-bound. DLP is there to catch the pathological case where a schema is wide enough to hold, say, a
-credit-card number. Never describe DLP as the primary defense — a content scan is exactly what
-Mark-1 argues *against* relying on (encrypt-before-emit defeats scans; it can't defeat a bandwidth
-bound). Book ch. 3/4.
+### 5.2 The DLP backstop (`dlp/`)
+`scan_secrets` + `scan_pii` run on the *serialized conforming output* (gate.py:121). It's a
+*secondary* backstop, **not** the guarantee — it catches a schema wide enough to hold, say, a card
+number. Never call DLP the primary defense: content scanning is exactly what Keyhole argues against
+relying on. (Book ch. 3/4.)
 
-### 4.3 Resource limits (`executor/limits.py`)
-POSIX `rlimit`s set in the child just before exec (`build_preexec`, line 20): address space (memory
-cap, line 27), CPU-seconds (line 29), file size (line 33), and **`RLIMIT_NPROC = 256` to blunt fork
-bombs** (line 35). Honest caveat (line 3): these are *defense-in-depth*; the *primary* resource
-ceiling in the cloud is the Fargate task sizing. On non-POSIX it degrades to a no-op and only the
-wall-clock timeout applies.
+### 5.3 Resource limits (`executor/limits.py`)
+POSIX rlimits set in the child just before exec (`build_preexec`, line 20): address space (line 27),
+CPU seconds (line 29), file size (line 33), and **`RLIMIT_NPROC = 256` against fork bombs** (line
+35). Defense in depth — the *primary* resource ceiling in the cloud is Fargate task sizing.
 
-### 4.4 Budget / drip defense (`controlplane/budget.py`)
-`BudgetPolicy(max_exit_bits, window_seconds)` (line 24) — `window_seconds=None` means "forever."
-`check_budget` (line 105) compares `spent + requested` against the cap. **Only *released* runs spend
-budget** — a withheld run leaked nothing, so it charges 0 (line 10). Two ledger implementations:
-`InMemoryLedger` (tests/local, line 53) and `FileLedger` (line 67, JSON under `~/.mark1`, so spend
-accumulates across separate CLI invocations). The `FileLedger` **fails open** to "no spend yet" on a
-corrupt file (line 72) — it's a best-effort guardrail, not a signed record; know this, it's an
-honest limitation. Proven by the `test_drip_exfiltration_over_runs` hostile test.
+### 5.4 Budget / drip defense (`controlplane/budget.py`)
+`BudgetPolicy(max_exit_bits, window_seconds)` (line 24); `window_seconds=None` means forever.
+`check_budget` (line 105) compares `spent + requested` against the cap. **Only released runs spend
+budget** (line 10) — which is exactly the gap in Part 7. Two ledgers: `InMemoryLedger` (line 53) and
+`FileLedger` (line 67, JSON under `~/.keyhole`). `FileLedger` **fails open** on a corrupt file (line
+72) — a best-effort guardrail, not a signed record. Know it.
 
-### 4.5 Attestation & verification (`attest/`)
-Two signer backends behind one `Signer` protocol (`sign.py:29`):
-- **`Ed25519Signer`** (line 36) — local dev; key persisted outside the repo, `chmod 600`.
-- **`KmsSigner`** (`attest/kms_signer.py`) — cloud; `algorithm="ecdsa-p256-sha256"`, calls
-  `kms:Sign`. **The private key never leaves KMS.**
+### 5.5 Attestation & verification (`attest/`)
+Two signers behind one `Signer` protocol (`sign.py:29`):
+- **`Ed25519Signer`** (line 36) — local dev; key outside the repo, `chmod 600`.
+- **`KmsSigner`** (`attest/kms_signer.py`) — cloud; `ecdsa-p256-sha256` via `kms:Sign`. **The private
+  key never leaves KMS.**
 
-The *signed claim set is identical* for both — only the signature bytes and the `algorithm`/`key_id`
-envelope differ (sign.py:10). So one verifier handles both: `verify.py:verify_attestation` (line 23)
-branches on `att.algorithm` (ed25519 at line 37, ECDSA-P256 at line 41). Verification is
-**dependency-light and stateless** (line 2) — a third party needs only the record + the public key.
-Tamper any signed field → canonical bytes change → `InvalidSignature` → returns False.
+The signed claims are identical for both; only the signature bytes and envelope differ (sign.py:10).
+One verifier handles both: `verify.py:verify_attestation` (line 23) branches on `att.algorithm`.
+Verification is **stateless** — a third party needs only the record and the public key.
 
-**The demo money-shot** rests here: change `data_owner` in a signed attestation JSON, re-verify →
-INVALID. You saw it: exit code 1.
+### 5.6 Multi-party clean room (`controlplane/cleanroom.py`)
+`Dataset` (line 33) and `Grant` (line 41: unguessable `grant-<token>`, the dataset, and a grantee or
+`"*"`). `DatasetStore` (line 61) is file-backed under `~/.keyhole/datasets/`. `load_files` (line 91)
+— the bytes — is **server-side only, never returned to a provider**. `authorize()` (line 106) is a
+pure function. `run_in_cleanroom` (line 119) authorizes first and on refusal **returns without
+materializing data or running anything** (line 138); on success it builds a two-principal
+`RunRequest` (line 142) and runs the same gate, so the attestation binds both identities.
 
-### 4.6 Multi-party clean room (`controlplane/cleanroom.py`)
-Two principals instead of one. `Dataset` (line 33: id, owner, `data_sha256`, filenames) and `Grant`
-(line 41: an unguessable `grant-<token>` bearer token, the dataset it's for, and a `grantee`
-provider name or `"*"`). `DatasetStore` (line 61) is file-backed under `~/.mark1/datasets/{meta,
-data,grants}`. Crucially, `load_files` (line 91) — the actual bytes — is **server-side only, never
-returned to a provider**.
-
-`authorize()` (line 106) is a **pure function**: dataset exists? grant exists? grant matches *this*
-dataset? grantee is `"*"` or the provider? Any "no" → `Decision(False, reason)`.
-
-`run_in_cleanroom` (line 119): authorize first; on refusal **return without materializing data or
-running anything** (line 138 — the provider only ever learns "denied"). On success, build a
-two-principal `RunRequest` (`principal=provider`, `data_owner=dataset.owner`, `dataset_id=...`, line
-142) and call the same `run_local`. The attestation then binds both identities + the dataset hash.
-
-**Honest limitations to volunteer:** grants are *bearer tokens* (unguessable, but not
-signed/expiring — production would sign + time-box them); and the owner/provider separation is at
-the *control-plane layer* (the registry holds the bytes) — true *infra-level* separation (the
-provider's IAM literally can't read the dataset's S3) is the noted cloud follow-up.
+**Volunteer:** grants are bearer tokens (production: signed + time-boxed), and separation is at the
+control-plane layer (production: the provider's IAM can't read the dataset's S3).
 
 ---
 
-## Part 5 — The cloud story (and the AWS gotcha that impresses)
+## Part 6 — The cloud story (and the AWS gotcha that impresses)
 
-### 5.1 The cloud run path (`controlplane/cloud_runner.py`)
-Same exit gate, different execution substrate. Flow (docstring, line 3):
-1. Upload `{code, data, timeout}` bundle to **S3** (line 75).
-2. **Presign** a GET (input) and PUT (output) URL (lines 77-84). *Why:* the sandbox uses these URLs
-   to read input and write output, so **it needs no AWS credentials and the task role stays EMPTY**.
-   This is elegant — the box can do exactly two S3 operations and nothing else.
-3. `ecs.run_task` in the private subnet with the run security group (via `launcher.py`).
-4. Wait for the task to reach `STOPPED`; download the output envelope from S3.
-5. Run the **same `run_exit_gate`** (line 123) — the guarantee is identical to local.
+### 6.1 The cloud run path (`controlplane/cloud_runner.py`)
+Same gate, different substrate (docstring, line 3):
+1. Upload `{code, data, timeout}` to **S3** (line 75).
+2. **Presign** a GET (input) and PUT (output) URL (lines 77-84) — so the sandbox needs **no AWS
+   credentials and the task role stays EMPTY**. The box can do exactly two S3 operations.
+3. `ecs.run_task` in the private subnet (via `launcher.py`).
+4. Wait for `STOPPED`; download the output envelope.
+5. Run the **same `run_exit_gate`** (line 123).
 6. Delete the run's S3 objects.
 
-**Submit/finalize split** (lines 52 / 109): `submit_cloud` launches and returns immediately;
-`finalize_cloud` runs after the task stops. *Why it exists:* API Gateway has a ~29-second timeout,
-but a Fargate cold start + run can exceed that. So the HTTP API does **async submit/poll**: `POST
-/runs` launches and returns `202 PENDING`; `GET /runs/{id}` finalizes once the task has stopped
-(`app.py:get_run`, line 76). Know this — it's a real distributed-systems design decision.
+**Submit/finalize split** (lines 52 / 109): API Gateway times out at ~29s, but a Fargate cold start
+can exceed that. So `POST /runs` launches and returns `202 PENDING`; `GET /runs/{id}` finalizes once
+the task has stopped (`app.py:get_run`, line 76). A real distributed-systems decision — know it.
 
-### 5.2 Hardened launch (`controlplane/launcher.py`)
-`build_run_task_params` (line 25) is a **pure function** so every containment choice is unit-testable
-without AWS. `LauncherConfig` (line 15) documents them: the task definition carries the **empty task
-role**; the subnet has **no route to a NAT gateway**; the security group's egress is limited to the
-S3/ECR/Logs VPC endpoints (no internet); `assign_public_ip` is **hard-wired False** (line 23/45).
+### 6.2 Hardened launch (`controlplane/launcher.py`)
+`build_run_task_params` (line 25) is a **pure function**, so every containment choice is
+unit-testable without AWS: empty task role, no NAT route, endpoint-only security group,
+`assign_public_ip` **hard-wired False** (lines 23/45).
 
-### 5.3 The control-plane API (`controlplane/app.py`)
-Framework-agnostic handlers (line 1) so the same logic runs in unit tests (in-memory store) and in
-Lambda (DynamoDB). `lambda_handler` (line 100) routes API Gateway v2 events: `POST /runs` →
-`submit_run`, `GET /runs/{id}` → `get_run` (finalizes if stopped), plus `/audit` and `/attestation`
-sub-routes. `submit_run` (line 53) does a quota check, launches, and persists a `PENDING` result +
-the finalize context. DynamoDB is the **append-only audit store**.
+### 6.3 The control-plane API (`controlplane/app.py`)
+Framework-agnostic handlers, so the same logic runs in tests (in-memory) and Lambda (DynamoDB).
+`lambda_handler` (line 100) routes `POST /runs`, `GET /runs/{id}`, `/audit`, `/attestation`.
+DynamoDB is the **append-only audit store**.
 
-### 5.4 THE GOTCHA (this one answer makes you look senior)
+### 6.4 THE GOTCHA (this answer makes you look senior)
 **Q: "How do you actually stop the code from making network calls?"**
 
-A: "At the **subnet / route-table / security-group layer** — *not* an in-task sidecar proxy. The
-reason is specific: Fargate's `awsvpc` mode gives all containers in a task **one shared network
-namespace**, so a proxy sidecar can't be a *mandatory* chokepoint — the untrusted container could
-just route around it to the shared interface. So containment is structural: the task runs in a
-private subnet with **no NAT / no internet route**, a **deny-by-default security group** that only
-reaches the S3/ECR/CloudWatch VPC endpoints, **no public IP**, and an **empty IAM task role**. I kept
-the deny-by-default egress-proxy design (M3) for a possible future *separate-task* chokepoint, but
-I was honest in the docs that it doesn't carry over to a same-task sidecar."
+"At the **subnet / route-table / security-group layer**, not an in-task sidecar proxy. Fargate's
+`awsvpc` mode gives all containers in a task **one shared network namespace**, so a sidecar can't
+be a *mandatory* chokepoint — the untrusted container can route around it. So containment is
+structural: private subnet with **no NAT / no internet route**, a **deny-by-default security group**
+that only reaches the S3/ECR/CloudWatch VPC endpoints, **no public IP**, and an **empty IAM task
+role**. I kept the egress-proxy design for a possible separate-task chokepoint, and documented that
+it doesn't carry over to a same-task sidecar."
 
-That answer shows: you hit a real AWS constraint, understood *why*, chose the correct fix, and were
-honest about the abandoned approach. (Book ch. 4; README M5 note.)
+That shows: a real AWS constraint, understood *why*, the correct fix, and honesty about the
+abandoned approach. And you can add: *"I verified it on real AWS — the smoke test's internet probe
+from inside the task returned False."*
 
 ---
 
-## Part 6 — The threat model & hostile suite (the marquee)
+## Part 7 — Threat model, hostile suite, and the hole I found
 
-The project's discipline: **every security claim ships with a hostile test that tries to break it.**
-`tests/hostile/` is where you prove you're not just asserting safety. Be able to name these:
+Every security claim ships with a hostile test that tries to break it (`tests/hostile/`):
 
 | Attack | What it tries | Why it fails |
 |---|---|---|
-| **Bulk dump** | write the whole dataset to the output | fails schema validation → WITHHELD (bandwidth) |
-| **Encode-in-bounded-string** | smuggle data inside an allowed string | the string's `max_length × log₂(charset)` *is* the disclosed bandwidth — bounded, and the budget caps accumulation |
-| **stdout channel** | print the data instead of writing output | stdout is not the exit; only `MARK1_OUTPUT` leaves |
+| **Bulk dump** | write the dataset to the output | fails schema → WITHHELD (bandwidth) |
+| **Encode in bounded string** | smuggle data inside an allowed string | `max_length × log₂(charset)` *is* the disclosed bandwidth; budget caps accumulation |
+| **stdout channel** | print the data | stdout isn't the exit |
 | **Fork bomb** | exhaust the host | `RLIMIT_NPROC=256` + task sizing |
 | **Memory hog** | OOM the host | `RLIMIT_AS` + task sizing |
-| **Drip across runs** | leak 1 bit per run, many runs | cumulative per-principal budget |
-| **Clean-room: ungranted provider** | run on data without a grant | `authorize()` refuses *before* the data is materialized |
-| **Clean-room: cross-principal exfil** | granted provider dumps the data | same bandwidth bound holds across principals → WITHHELD |
-| **Tamper attestation** | edit a signed field | canonical bytes change → signature INVALID |
+| **Drip across runs** | leak a bit per released run | cumulative per-principal budget |
+| **Clean room: ungranted** | run without a grant | `authorize()` refuses before data is materialized |
+| **Clean room: cross-principal** | granted provider dumps the data | same bandwidth bound → WITHHELD |
+| **Tamper attestation** | edit a signed field | signature INVALID |
 
-Run them live: `make hostile`. Full suite: `make test` → **90 passed, 2 skipped**.
+`make hostile` runs them; `make test` → **90 passed, 2 skipped**.
 
-**What's explicitly out of scope (say so — it's honesty, not weakness):**
+### The hole: run status is a side channel
+
+The budget charges only *released* runs (`gate.py:140`). But a failed run tells the caller its exit
+code (`gate.py:96`: `"code exited with status {exit_code}"`). Exit codes span 0–255 — about
+**8 bits per run, never charged, with no limit on runs.** Malicious code can exit with the next byte
+of the file; ~414 runs drain the example dataset, even after the budget reports "exhausted".
+Released-vs-withheld and timeout-vs-not are smaller versions of the same channel.
+
+**The fix (planned):** collapse every non-release outcome into one opaque `withheld` status with no
+detail returned to the caller (details stay in the owner's audit log), and charge **every** run.
+The honest per-run bound then becomes log₂(choices + 1) — the +1 is "not released".
+
+**How to tell it:** *"I found a hole in my own drip defense: failure codes were an uncharged side
+channel — 8 bits a run. I closed it by making every non-release outcome look identical and charging
+every run."* Finding and closing your own hole is the strongest security signal you can give. Being
+caught with it is the worst.
+
+### Out of scope (say so — it's honesty, not weakness)
 - Covert *timing* channels (fixed-duration runs are future work).
-- The residual within-schema channel (bounded, not zero — the confinement problem).
-- Hardware-level trust (the attestation currently trusts the control plane; Nitro Enclaves is the
-  future fix so you don't have to).
+- The residual within-schema channel (bounded, not zero).
+- Hardware-level trust (the attestation trusts the control plane; Nitro Enclaves is the fix).
 
 ---
 
-## Part 7 — The hard interview questions (with answers)
+## Part 8 — The hard questions (with answers)
 
 **Q1. "Can't the code just encode the data into the allowed output?"**
-Yes — that's the residual covert channel and I raise it myself. A 3-way enum leaks ≤1.58 bits per
-run; the code can choose *which* value to encode a bit. My defense is the cumulative per-principal
-budget capping total bits across runs. I never claim zero leak — the confinement problem proves
-that's impossible. I claim a **provable, disclosed ceiling.**
+Yes — that's the residual channel and I raise it myself. A 3-way enum leaks ≤1.58 bits per run by
+choosing *which* value. The per-principal budget caps the total. I never claim zero leak; I claim a
+**provable, disclosed ceiling.**
 
 **Q2. "Why can't the attacker disable the schema check?"**
-The schema comes from the caller on the request; the exit gate runs in a *different trust domain*
-than the code. The code has full freedom inside the box and zero authority over the gate. You can't
-unlock a box from inside it. In cloud that boundary is real infra (Fargate task vs Lambda control
-plane), and the signing key is in KMS where the box can't reach it.
+The schema comes from the caller; the gate runs in a *different trust domain* than the code. You
+can't unlock a box from inside it. In the cloud that boundary is real infrastructure (Fargate task
+vs Lambda), and the signing key is in KMS where the box can't reach it.
 
-**Q3. "How is this different from just running code in a container / E2B / Modal?"**
-Those are isolation-first: they protect the *host* from the code and hand you back *everything* the
-code produced. That's the opposite of what I want. I protect the *data* from the code by making the
-*return channel* narrow. Different threat model — theirs is "don't let code escape," mine is "don't
+**Q3. "How is this different from a container / E2B / Modal?"**
+Those protect the *host* from the code and hand back *everything* it produced. I protect the *data*
+from the code by narrowing the *return channel*. Theirs is "don't let code escape"; mine is "don't
 let data escape."
 
 **Q4. "Isn't a DLP scan enough?"**
-No, and that's the whole thesis. A content scan is defeated by encrypt-before-emit — the code
-encrypts the data, the scanner sees noise, the attacker decrypts it later. A **bandwidth** bound
-isn't: if only 1.58 bits fit through the exit, it doesn't matter how cleverly they're encoded. DLP
-is my *secondary* backstop, never the guarantee.
+No — that's the thesis. Encrypt-before-emit defeats any content scan. A bandwidth bound can't be
+beaten by encoding: if only 1.58 bits fit, cleverness doesn't matter. DLP is a backstop only.
 
-**Q5. "How do you actually block network egress?"** → the Part 5.4 gotcha answer.
+**Q5. "How do you actually block network egress?"** → Part 6.4.
 
-**Q6. "What does the attestation actually prove, and to whom?"**
-It's a signature over: the code hash, data hash, schema hash, the exact released value (or null), the
-bandwidth, the egress verdict, and the clean-room identities. Anyone with the signer's public key can
-verify it **offline** — no access to my system. It proves *this exact code ran on this exact data,
-zero egress, and only this bounded value came out.* Tamper any field and it's INVALID.
+**Q6. "What does the attestation prove, and to whom?"**
+A signature over the code/data/schema hashes, the exact released value (or null), the bandwidth, the
+egress verdict and the clean-room identities. Anyone with the public key verifies it **offline**.
+Tamper any field → INVALID.
 
-**Q7. "What would you build next / what's the weakest part?"**
-Two things. (1) The attestation trusts my control plane — moving signing into a **Nitro Enclave**
-makes it hardware-anchored so you don't have to trust me. (2) Clean-room grants are bearer tokens
-and separation is control-plane-level — production wants **signed, time-boxed grants + infra-level
-IAM separation** so the provider's role literally can't read the dataset's S3.
+**Q7. "What's the weakest part / what would you build next?"**
+(1) The status side channel (Part 7) — and how I'd close it. (2) The attestation trusts my control
+plane; signing inside a **Nitro Enclave** makes it hardware-anchored. (3) Clean-room grants should
+be signed and time-boxed, with IAM-level separation.
 
 **Q8. "Doesn't the narrow exit block legitimate large outputs?"**
-Yes, by design — that's the product boundary. Mark-1 is for "run untrusted code on sensitive data,
-get a small answer" (a label, a score, a count, a few extracted records via bounded arrays). If you
-need megabytes back, you're already trusting the code with bulk output and you'd use an isolation
-sandbox. The mental test: *is the data more sensitive than the answer is large?*
+By design — that's the product boundary. Keyhole is for "untrusted code on sensitive data, small
+answer back". If you need megabytes back, you're already trusting the code with bulk output. The
+test: *is the data more sensitive than the answer is large?*
 
-**Q9. "Real use cases?"** → AI agent analyzing private data; two-party clean room (hospital records ×
-vendor model; bank txns × fraud vendor; ad measurement); untrusted marketplace plugins on user data;
-GDPR/residency-bounded compute; scoring models against a secret benchmark.
+**Q9. "Real use cases?"** AI agent on private data; two-party clean room (hospital × vendor model,
+bank × fraud vendor, ad measurement); untrusted marketplace plugins; scoring against a secret
+benchmark.
 
-**Q10. "Why should I trust your bandwidth numbers?"**
-They're deliberate *conservative upper bounds* — unbounded scalars fall back to full machine width
-(64 bits), arrays assume every element is max-entropy. It always overstates the channel, never
-understates it (`bandwidth.py:9`). If anything the real leak is smaller than I claim.
+**Q10. "Why trust your bandwidth numbers?"**
+They're deliberately *conservative upper bounds* — unbounded scalars count as 64 bits, arrays assume
+every element is max-entropy (`bandwidth.py:9`). The real leak is smaller than I claim, never larger.
 
----
+**Q11. "What's actually novel here?"**
+Not bounded leakage — that's from information-flow research (Part 1). The novelty is making it a
+usable primitive for arbitrary, AI-generated code: a declared-width exit enforced outside the code's
+trust domain, a cumulative bit budget, and a signed receipt — deployable into your own AWS account.
 
-## Part 8 — Live demo (pointer)
-
-Full runbook with narration: **`DEMO.md`**. The 90-second spine:
-1. `make demo` — honest released, exfil withheld, both attested.
-2. `sbx run examples/classify.py …` → released, 1.58 bits.
-3. `sbx run examples/exfil.py …` → **withheld** (exit 3).
-4. clean room: register → grant → provider runs → **intruder refused** (exit 4).
-5. `sbx verify att.json` → VALID; tamper `data_owner` → **INVALID** (exit 1).
-6. `sbx dashboard` → the exit-bandwidth aperture gauge.
-
-Do **not** deploy the cloud live (money, ~30s cold start). Talk to `infra/terraform/` and say you
-verified it live and tore it down.
+**Q12. "Can the code leak through *how* it fails?"**
+Yes, today — and I found it myself (Part 7). Exit codes are an uncharged ~8-bit channel per run. The
+fix: one opaque non-release status and charge every run, giving log₂(choices + 1) bits per run.
 
 ---
 
-## Part 9 — Repo map (where everything lives)
+## Part 9 — Live demo
 
-| Path | What | Read priority |
+```bash
+make showtime              # terminal 1 — press Enter between beats
+make showtime-dashboard    # terminal 2 — http://127.0.0.1:8787, same runs
+```
+
+Six beats, each a real `sbx` command: **(1)** data vs exit — 3,312 bits vs 1.58; **(2)** honest code
+→ RELEASED; **(3)** malicious code → WITHHELD; **(4)** drip attack — budget meter fills, run 6
+refused; **(5)** clean room — partner runs, intruder refused; **(6)** receipt VALID → tamper one
+field → INVALID. Rehearse with `make showtime ARGS=--auto`. Full runbook: `DEMO.md`.
+
+Let the visual land before pressing Enter — beats 1 and 3 are where people get it. Don't deploy the
+cloud live (5 minutes, cold starts); say you verified it on real AWS and tore it down, and offer to
+walk the Terraform.
+
+---
+
+## Part 10 — Repo map
+
+| Path (under `src/keyhole/`) | What | Priority |
 |---|---|---|
 | `schema/spec.py` | the narrow-exit definition + guardrails | ★★★ |
 | `schema/bandwidth.py` | bits-per-schema accounting | ★★★ |
 | `schema/validate.py` | strict output validation | ★★★ |
 | `controlplane/gate.py` | **the exit gate** — the heart | ★★★ |
-| `attest/record.py`,`sign.py`,`verify.py` | signed attestations | ★★★ |
+| `attest/record.py`, `sign.py`, `verify.py` | signed attestations | ★★★ |
 | `executor/entrypoint.py` | run the code, capture the one output | ★★ |
 | `executor/limits.py` | rlimits (fork bomb / memory) | ★★ |
 | `controlplane/budget.py` | drip defense | ★★ |
@@ -393,27 +422,28 @@ verified it live and tore it down.
 | `controlplane/launcher.py` | hardened `run_task` | ★★ |
 | `controlplane/app.py` | Lambda/API Gateway handlers | ★ |
 | `common/models.py` | the shared data contract | ★★ |
-| `infra/terraform/` | one-command AWS deploy | ★ |
-| `tests/hostile/` | the adversarial suite | ★★ |
-| `docs/book/` | the "why" behind every choice | ★★★ |
+| `infra/terraform/` (repo root) | AWS deploy | ★ |
+| `tests/hostile/` (repo root) | the adversarial suite | ★★ |
+| `docs/book/` (repo root) | the "why" behind every choice | ★★★ |
 
 ---
 
-## Part 10 — Self-test (you're ready when you can do all of these from memory)
+## Part 11 — Self-test (ready when you can do all of these from memory)
 
-- [ ] State the thesis in one sentence and the difference from E2B/Modal.
+- [ ] Give the 30-second pitch, problem first, without mentioning a single file.
+- [ ] Place Keyhole against sandboxes, TEEs, clean rooms, DLP and differential privacy in one line each.
 - [ ] Explain the confinement problem and why you *don't* claim zero leak.
-- [ ] Compute the bandwidth of a 3-way enum, a bounded int [0,255], a string(max_length=10, hex).
-- [ ] Name the exit-gate decision order (validate → bandwidth → DLP → budget → release → attest).
+- [ ] Compute the bandwidth of a 3-way enum, an int in [0,255], a 10-char hex string.
+- [ ] Name the gate order (validate → bandwidth → DLP → budget → release → sign).
 - [ ] Explain why the attacker can't change the schema (trust-domain separation).
-- [ ] Explain the drip attack and the cumulative-budget defense.
+- [ ] Explain the drip attack, the budget, **and the status side channel + its fix.**
 - [ ] Explain how egress is *actually* blocked and the awsvpc-sidecar gotcha.
-- [ ] Explain what the attestation signs and how tamper-detection works.
-- [ ] Explain the clean-room two-principal model and what the attestation binds.
-- [ ] Explain the submit/poll split and why (API Gateway 29s timeout).
-- [ ] Run the whole demo cold, including the tamper→INVALID beat.
-- [ ] Name three real use cases and the "is the data more sensitive than the answer is large?" test.
-- [ ] Name three honest limitations (bounded-not-zero, bearer-token grants, no hardware attestation).
+- [ ] Explain what the attestation signs and how tampering is detected.
+- [ ] Explain the clean-room model and what the attestation binds.
+- [ ] Explain the submit/poll split (API Gateway's 29s timeout).
+- [ ] Run `make showtime` cold, including the tamper → INVALID beat.
+- [ ] Name three use cases and the "data more sensitive than the answer is large" test.
+- [ ] Name three honest limitations.
 
-Answers to the bandwidth arithmetic: enum(3) = log₂3 ≈ **1.58**; int[0,255] = log₂256 = **8**;
-string(10 hex chars) = 10 × log₂16 = 10 × 4 = **40 bits**.
+Bandwidth answers: enum(3) = log₂3 ≈ **1.58**; int[0,255] = log₂256 = **8**; 10 hex chars =
+10 × log₂16 = **40 bits**.

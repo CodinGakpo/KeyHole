@@ -1,203 +1,207 @@
-# Mark-1
+# Keyhole
 
-**Confidential code execution with a bandwidth-bounded, attested exit.**
+**Let untrusted code read your private data — and let only a small, signed answer out.**
 
-Run untrusted or AI-generated code on your private data in the cloud, and get back **only a small,
-typed, cryptographically-attested answer** — so the data *structurally* cannot leave.
+You can look through a keyhole; you can't carry the furniture out through it. Keyhole runs
+untrusted or AI-generated code on sensitive data, but the only thing that may leave is a value you
+declared in advance (a label, a score, a count) — sized in **bits**, enforced outside the code's
+reach, and recorded in a **signed receipt** anyone can verify.
+
+## The problem
+
+A hospital wants a vendor's model to score its patient records. A bank wants a fraud vendor's code
+to run over its transactions. An AI agent wants to write and run a script over your customer table.
+In every case, someone must currently hand over their crown jewels: the data owner ships the data,
+or the code owner ships the code — and with AI agents, the code was written seconds ago and nobody
+has reviewed it.
+
+Running that code in a sandbox doesn't fix this. A sandbox stops code from **escaping the box**; it
+then hands back **whatever the code returns**. If the code read your customer table, the customer
+table can walk out inside the answer.
+
+## Why existing tools don't cover it
+
+| Approach | What it protects | Why it misses this case |
+|---|---|---|
+| Code sandboxes (E2B, Modal, AWS AgentCore) | the **host** from the code | output is returned unrestricted, so data leaks through it |
+| Confidential computing / TEEs (Nitro Enclaves, SGX) | data from the **operator** | the code inside the enclave can still return the data |
+| Data clean rooms | data from **queries** | restrict SQL-style analyses, not arbitrary code |
+| DLP / content scanning | known **patterns** in output | defeated by encrypting or encoding before emitting |
+| Differential privacy | individuals in **aggregates** | needs a statistical query model, not general code |
+
+Keyhole takes a known idea — bounded information leakage, from information-flow research and the
+confinement problem (Lampson, 1973) — and makes it a practical primitive for the case none of these
+cover: **arbitrary code, on private data, with a receipt.**
+
+## The idea in one number
+
+Before the code runs, the caller declares the shape of the answer, e.g.
+`{"type": "enum", "choices": ["spam", "ham", "other"]}`. Three possible answers can carry at most
+log₂3 = **1.58 bits**. The example customer file is **3,312 bits**. It does not fit — no matter how
+cleverly it's encoded, because this is a limit on *size*, not a search for *content*.
 
 ```bash
-# Classify some private emails without letting the code exfiltrate them.
-sbx run classify.py --data emails.csv=./emails.csv --schema schemas/label.json --local
-# → status: succeeded   output: "spam"   bandwidth: 1.58 bits   attestation: att-…
+sbx run examples/classify.py --data customers.csv=examples/customers.csv \
+    --schema schemas/label.json --local
+# → status: succeeded   output: "spam"   bandwidth: 1.58 bits
 
-# A script that tries to dump the whole dataset instead:
-sbx run exfil.py --data emails.csv=./emails.csv --schema schemas/label.json --local
-# → status: withheld    output does not conform to the declared schema  (nothing released)
+sbx run examples/exfil.py --data customers.csv=examples/customers.csv \
+    --schema schemas/label.json --local
+# → status: withheld    output does not conform to the declared schema   (nothing released)
 ```
 
-## Why it's different
+On top of that one idea:
 
-Isolation-first sandboxes (E2B, Modal, AWS AgentCore) stop code from **escaping the box** — they
-protect the *host* from the code. They do nothing to stop code that legitimately reads your data
-from **leaking** it. Mark-1 protects the **data** from the code:
+- **A bit budget per caller.** Asking many small questions could add up, so each caller has a
+  cumulative cap on released bits (`--principal mallory --budget-bits 8`).
+- **A signed receipt for every run.** The attestation binds the hashes of the code, data and schema,
+  the exact output, and who was involved. Change one field and verification fails.
+- **A locked-down cloud.** On AWS the code runs on Fargate in a subnet with no internet route, an
+  empty IAM role and a read-only filesystem; the receipt is signed by a KMS key that never leaves KMS.
+- **Two-party clean room.** A data owner grants a partner the right to run code on a dataset the
+  partner never receives.
 
-- Untrusted code may return **only** a value matching a caller-declared **narrow schema** (int /
-  enum / bounded string / bounded array / small object). A few-byte exit makes **bulk exfiltration
-  structurally impossible** — a bandwidth argument, not a content scan that encrypt-before-emit
-  defeats.
-- Every run emits a **signed attestation**: *this exact code ran on this exact data with zero
-  egress, and only this bounded value came out* — verifiable by anyone.
-- A **cumulative exit-bandwidth budget** (`--principal alice --budget-bits 8`) caps the *total*
-  bits a caller can ever extract across runs, so drip exfiltration over many conforming calls is
-  bounded too — not just each run.
-- Deploys into **your own AWS account** with one `terraform apply`. Designed for < ~$10/month, ≈ $0
-  idle. An MCP server lets AI agents use it directly.
+## See it
 
-Built on the confinement problem (Lampson, 1973): we never claim "zero leak." We claim the leak is
-**bounded to the schema you chose and disclosed in the attestation.** See [`SECURITY.md`](SECURITY.md).
+```bash
+python -m pip install -e '.[dev]'
+make showtime              # paced visual walkthrough of everything above (~3 min)
+make showtime-dashboard    # second terminal: the same runs in the browser
+```
 
-## Status
+`make demo` is the 10-second, non-interactive version.
 
-The base (M0–M8) is complete and verified:
-
-- **Local:** the full pipeline (typed exit, bandwidth accounting, exit gate, DLP backstop, ed25519
-  attestation, cumulative budget) runs today via `sbx run --local`, `make demo`, and the MCP server.
-- **Cloud:** a full **deployable API** — `terraform apply` stands up a Lambda + API Gateway control
-  plane, DynamoDB (append-only audit), and a **KMS signing key** (the attestation private key never
-  leaves KMS). `sbx run` (without `--local`) submits to the API and polls to completion. Proven
-  end-to-end on real AWS — honest answer released + KMS-attested, exfiltrator withheld, attestation
-  **VALID** against the exported KMS public key — all inside a no-NAT private subnet with an
-  endpoints-only security group and an **empty task IAM role**. Tears down to zero (idle ≈ $0 apart
-  from the ~$1/mo KMS key; a run costs pennies).
-- **Adversarial:** `tests/hostile/` (dump, encode-in-bounded-string, stdout, fork bomb, memory hog,
-  drip-exfiltration-across-runs) all structurally blocked; the MCP transport is integration-tested
-  end-to-end.
-
-Remaining work is [future scope](docs/FUTURE-SCOPE.md), not the base guarantee.
-
-## How it fits together
+## How it works
 
 ```mermaid
 flowchart LR
     A["Agent / CLI<br/>(code + data + schema)"] --> B["Control plane"]
-    B --> C["Sandbox (Fargate)<br/>no NAT · no internet ·<br/>empty IAM role · read-only FS"]
+    B --> C["Sandbox (Fargate)<br/>no internet · empty IAM role ·<br/>read-only FS"]
     C -- "raw output" --> D{"Exit gate"}
-    D -- "conforms + within budget" --> E["Released value<br/>≤ schema bandwidth (bits)"]
+    D -- "fits schema + within budget" --> E["Released value<br/>≤ schema bandwidth (bits)"]
     D -- "anything else" --> F["Withheld<br/>(nothing leaves)"]
     E & F --> G["Signed attestation<br/>(verifiable by anyone)"]
 ```
 
-<details>
-<summary><b>Demo transcript</b> (<code>make demo</code> — same dataset, same schema, two programs)</summary>
+The code runs in one trust domain; the **exit gate** runs in another. The code has full freedom
+inside the box and no authority over the gate, so it can't change the schema it's judged by. The
+gate checks, in order: does the output fit the schema → how many bits could it carry → does a
+secondary DLP scan flag it → is the caller within budget → release, and sign a receipt either way.
 
-```text
-Mark-1 local demo — same dataset, same schema, two programs
-dataset: 20279 bytes; exit schema: 3-way enum (~1.58 bits)
+## What it guarantees — and what it doesn't
 
-[honest classifier]
-  status:      succeeded
-  output:      'spam'
-  bandwidth:   1.58 bits (max that could leave)
-  attestation: att-ec16dec137624dcf8d6ac6cf285eba73  (signature VALID)
+Keyhole never claims "zero leakage": the confinement problem proves that's impossible for code that
+can see the data. It claims a **disclosed ceiling**.
 
-[malicious exfiltrator]
-  status:      withheld
-  output:      None
-  withheld:    output does not conform to the declared schema: $: value not among enum choices
-  bandwidth:   1.58 bits (max that could leave)
-  attestation: att-72eafb3418f647918b42592f239f76bd  (signature VALID)
+- **Guaranteed:** a released answer carries at most the schema's bandwidth; anything that doesn't
+  fit is withheld; every run is signed and tamper-evident.
+- **Bounded, not zero:** code can choose *which* allowed answer to give, leaking up to the schema's
+  bits per run. The per-caller budget caps the total of released answers.
+- **Known gap:** run *status* is a side channel. A failed run reports its exit code and is not
+  charged to the budget, so code could signal through how it fails. Fix planned: collapse every
+  non-release outcome into one opaque status and charge every run.
+- **Out of scope:** timing side channels, what a legitimate answer itself reveals, and breaking
+  AWS's own isolation. See [`SECURITY.md`](SECURITY.md).
 
-The dataset is ~20279 bytes; the widest the exit can carry is ~1.58 bits.
-Bulk exfiltration is structurally impossible, not merely scanned-for.
-```
+## Use cases
 
-</details>
+- An AI agent analyzing private data it should never be able to take away.
+- Two-party computation: hospital records × vendor model, bank transactions × fraud vendor, ad
+  measurement.
+- Untrusted marketplace plugins running over user data.
+- Scoring a model against a secret benchmark without revealing the benchmark.
 
-## Use from an AI agent (MCP)
+The rule of thumb: Keyhole fits when **the data is more sensitive than the answer is large.**
 
-The MCP server exposes `run_confidential_tool`: an agent supplies untrusted code, the data, and a
-narrow output schema, and gets back only the schema-conforming value plus an attestation id — the
-same exit gate as everywhere else, so the guarantee is identical.
+## Usage
 
-```bash
-pip install -e '.[mcp]'
-claude mcp add mark1 -- mark1-mcp        # Claude Code
-```
-
-Any other MCP host, via generic stdio config:
-
-```json
-{ "mcpServers": { "mark1": { "command": "mark1-mcp" } } }
-```
-
-## Deploy the cloud API (your AWS account)
+### Multi-party clean room
 
 ```bash
-make lambda-zip                                    # build dist/controlplane.zip
-cd infra/terraform/environments/dev
-terraform apply -var enable_control_plane=true -var enable_egress_endpoints=true
-#   → outputs: api_endpoint, kms_key_id, …   (push the sandbox image to the ECR repo once)
-
-export MARK1_API_ENDPOINT="https://<id>.execute-api.<region>.amazonaws.com/"
-sbx run classify.py --data emails.csv=./emails.csv --schema schemas/label.json \
-    --save-attestation att.json                    # submit → poll → released + KMS-attested
-aws kms get-public-key --key-id <kms_key_id> ...   # export the public key as PEM
-sbx verify att.json --pubkey kms.pem               # VALID, algorithm: ecdsa-p256-sha256
-```
-
-The KMS signing key is ~$1/month; Lambda + API Gateway + DynamoDB are free/pennies at this scale.
-`terraform destroy` returns the account to ≈ $0.
-
-## Dashboard
-
-`sbx run --local` records each run under `~/.mark1`; `sbx dashboard` serves a self-contained,
-read-only viewer of that history — no web framework, no CDN, no external requests. Its signature
-element is the **exit-bandwidth aperture**: a log-scale gauge that plots a run's exit bits against
-`1 bit → 1 KB → 1 MB`, so a bounded exit reads as the sliver it is.
-
-```text
- MARK·1   run evidence                          ● released  ● withheld  ● failed
-┌────────────────────────────┬──────────────────────────────────────────────────┐
-│ RUN LEDGER            3 runs│  VERDICT                                          │
-│ ┌────────────────────────┐ │  Released   [succeeded]  run-042f…      ✓ VALID   │
-│ │ 042f19b1  [SUCCEEDED]  │ │                                                   │
-│ │ 4.75 bits    ✓ VALID   │ │  EXIT APERTURE          4.75 bits could leave     │
-│ ├────────────────────────┤ │  ├────────▮──────────────────────────────────┤   │
-│ │ 33c9e772  [WITHHELD]   │ │  1 bit   1 B        1 KB                 1 MB      │
-│ │ 1.58 bits    ✓ VALID   │ │                                                   │
-│ ├────────────────────────┤ │  BOUND HASHES — ed25519                           │
-│ │ 2ba7ca67  [SUCCEEDED]  │ │  code    3f2a…   data  9c1d…   schema  7b0e…      │
-│ │ 1.58 bits    ✓ VALID   │ │  DATA-FLOW RECORD ·  output_written               │
-│ └────────────────────────┘ │  VERIFY  ⤓ drop an attestation.json to check      │
-└────────────────────────────┴──────────────────────────────────────────────────┘
-```
-
-```bash
-sbx dashboard            # → http://127.0.0.1:8787   (Ctrl-C to stop)
-```
-
-## Multi-party clean room
-
-The strongest form of the thesis: *let an external party's AI run on **your** data, and get proof
-of exactly what left.* The data-owner and the code-provider are separate principals — the provider
-references the dataset by id and **never receives the bytes**, and the attestation binds both
-identities plus the dataset hash.
-
-```bash
-# Data-owner: register a dataset, then grant a specific code-provider.
+# Data owner: register a dataset, then grant a specific code provider.
 sbx dataset add customers.csv=./customers.csv --owner acme      # → ds-1eebc2b917c4
-sbx dataset grant ds-1eebc2b917c4 --to partner-ai               # → grant-… (a bearer token)
+sbx dataset grant ds-1eebc2b917c4 --to partner-ai               # → grant-…
 
-# Code-provider: run against the dataset by id + grant. They never see the data.
+# Code provider: run by dataset id + grant. They never receive the bytes.
 sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… \
     --principal partner-ai --schema schemas/label.json
 # → succeeded   output: "spam"   attestation binds {acme, partner-ai, ds-1eebc2b917c4}
 
-# An un-granted provider is refused before anything runs:
+# Anyone else holding the same token is refused before anything runs:
 sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… --principal intruder …
-# → refused: grant does not authorize provider 'intruder' (nothing ran; data never materialized)
+# → refused: grant does not authorize provider 'intruder'
 ```
 
-The owner can then `sbx verify` the returned attestation: *provider `partner-ai` ran this code on
-dataset `ds-1eebc2b917c4` (hash matches what I registered), zero egress, and only `"spam"` came out.*
-This is a **local MVP** of the model — grant tokens are unguessable bearer capabilities (a
-production grant would be signed and time-boxed), and infra-level principal separation (the
-provider's IAM cannot read the dataset's S3) is the noted cloud hardening step.
+This is a local MVP of the model: grants are unguessable bearer tokens (production would sign and
+time-box them), and owner/provider separation is enforced by the control plane rather than by IAM.
+
+### Verify a receipt
+
+```bash
+sbx run … --save-attestation att.json
+sbx verify att.json                         # VALID   (local ed25519 dev key)
+sbx verify att.json --pubkey kms.pem        # VALID   (cloud: ecdsa-p256 via KMS)
+```
+
+### From an AI agent (MCP)
+
+The MCP server exposes `run_confidential_tool`: an agent supplies code, data and a narrow schema,
+and gets back only the conforming value plus an attestation id — the same exit gate as everywhere.
+
+```bash
+pip install -e '.[mcp]'
+claude mcp add keyhole -- keyhole-mcp       # Claude Code
+```
+
+Any other MCP host: `{ "mcpServers": { "keyhole": { "command": "keyhole-mcp" } } }`
+
+### Deploy to your AWS account
+
+```bash
+infra/terraform/environments/dev/stack.sh up     # build, terraform apply, push sandbox image
+export KEYHOLE_API_ENDPOINT=…                    # printed by `up`
+sbx run classify.py --data emails.csv=./emails.csv --schema schemas/label.json \
+    --save-attestation att.json                  # submit → poll → released + KMS-signed
+sbx verify att.json --pubkey /tmp/kms.pem
+infra/terraform/environments/dev/stack.sh down   # back to ≈ $0
+```
+
+Lambda + API Gateway control plane, DynamoDB audit log, Fargate sandbox, KMS signing key. About
+$0.03/hour while up (VPC endpoints), ≈ $0 when torn down. `stack.sh` reads AWS keys from the
+repo-root `.env` (`AWS_ACCESS_KEY`, `AWS_SECRET_KEY`).
+
+### Dashboard
+
+`sbx dashboard` serves a read-only, self-contained viewer of local runs (`~/.keyhole`) on
+http://127.0.0.1:8787 — no framework, no CDN. Its centerpiece is the **exit aperture**, a log-scale
+gauge from 1 bit to 1 MB, so a bounded exit reads as the sliver it is. Drop an attestation file on
+it to verify.
+
+## Status
+
+- **Local:** full pipeline — typed exit, bandwidth accounting, exit gate, DLP backstop, ed25519
+  attestation, budget, clean room, MCP server, dashboard.
+- **Cloud:** deployed and verified end to end on real AWS — honest answer released and KMS-signed,
+  exfiltrator withheld, sandbox internet probe blocked, attestation VALID against the KMS public key.
+- **Adversarial:** `tests/hostile/` attacks every claim — bulk dump, encoding into a bounded string,
+  stdout, fork bomb, memory hog, drip across runs, clean-room intruder and cross-principal exfil,
+  attestation tamper.
+
+Next: see [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `src/mark1/schema/` | The typed narrow exit + bandwidth accounting — the core guarantee. |
-| `src/mark1/attest/` | Signed, verifiable attestations. |
-| `src/mark1/controlplane/gate.py` | The exit gate: validate → bandwidth → backstop → attest → release. |
-| `src/mark1/executor/` | Local executor (fast dev loop) matching the cloud contract. |
-| `src/mark1/cli/`, `src/mark1/mcp/` | Thin CLI and MCP clients. |
-| `infra/terraform/` | One-command AWS deploy (no NAT; ≈ $0 idle). |
-| `images/` | Sandbox + egress-proxy container images. |
-| `tests/hostile/` | The marquee: hostile scripts that try to exfiltrate — and can't. |
+| `src/keyhole/schema/` | The narrow exit and its bandwidth accounting — the core guarantee. |
+| `src/keyhole/controlplane/gate.py` | The exit gate: validate → bandwidth → DLP → budget → release → sign. |
+| `src/keyhole/attest/` | Signed, verifiable attestations (ed25519 locally, KMS in the cloud). |
+| `src/keyhole/executor/` | Local executor matching the cloud contract. |
+| `src/keyhole/cli/`, `src/keyhole/mcp/` | CLI (`sbx`) and MCP server. |
+| `infra/terraform/` | AWS deploy (no NAT; ≈ $0 idle). |
+| `tests/hostile/` | Hostile scripts that try to exfiltrate — and can't. |
 | `docs/book/` | The decision book: every design choice and why. |
-| `docs/FUTURE-SCOPE.md` | The roadmap of future features. |
+| `STUDY-GUIDE.md`, `DEMO.md` | Interview prep and the live-demo runbook. |
 
 ## Develop
 
