@@ -5,8 +5,9 @@ nothing about *accumulation*: an adversary who calls the box N times, each withi
 leak N x bandwidth bits over time. This module bounds the total, per caller, over a window.
 
 Pure policy (no cloud dependency), like :mod:`keyhole.controlplane.quotas`, so the rules are
-unit-testable. Only *released* runs spend budget — a withheld run leaks nothing, so it charges 0.
-On release we charge the schema's conservative upper bound (``bandwidth_bits``), matching the
+unit-testable. *Every* admitted run spends budget, released or not: whether a run was released is
+itself information, so a withheld run is not free. Each run is charged ``run_channel_bits`` —
+log2(N + 1) for N conforming values plus the one opaque "not released" outcome — matching the
 "overstate the channel, never understate it" philosophy of the bandwidth accounting.
 """
 
@@ -23,7 +24,7 @@ from keyhole.common.models import utcnow
 
 @dataclass(frozen=True)
 class BudgetPolicy:
-    """A cap on released exit-bits per principal. ``window_seconds=None`` => cumulative forever."""
+    """A cap on charged exit-bits per principal. ``window_seconds=None`` => cumulative forever."""
 
     max_exit_bits: float
     window_seconds: float | None = None
@@ -38,7 +39,7 @@ class BudgetDecision:
 
 
 class Ledger(Protocol):
-    """Records released exit-bits per principal and reports the spend within a window."""
+    """Records charged exit-bits per principal and reports the spend within a window."""
 
     def spent(self, principal: str, window_seconds: float | None, now: datetime) -> float: ...
     def record(self, principal: str, bits: float, at: datetime) -> None: ...
@@ -109,7 +110,7 @@ def check_budget(
     requested_bits: float,
     now: datetime | None = None,
 ) -> BudgetDecision:
-    """Decide whether releasing ``requested_bits`` for ``principal`` stays within the budget."""
+    """Decide whether charging ``requested_bits`` to ``principal`` stays within the budget."""
     now = now or utcnow()
     spent = ledger.spent(principal, policy.window_seconds, now)
     remaining = policy.max_exit_bits - spent
@@ -121,7 +122,7 @@ def check_budget(
         )
         reason = (
             f"cumulative exit-bandwidth budget exceeded for principal '{principal}': "
-            f"{spent:.2f} bits already released {window}, this run would add {requested_bits:.2f}, "
+            f"{spent:.2f} bits already charged {window}, this run would add {requested_bits:.2f}, "
             f"over the {policy.max_exit_bits:.2f}-bit cap"
         )
         return BudgetDecision(False, reason, spent_before=spent, remaining=remaining)

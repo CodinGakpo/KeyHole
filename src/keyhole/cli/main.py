@@ -21,7 +21,7 @@ from keyhole.common.models import Limits, RunRequest
 from keyhole.controlplane.budget import BudgetPolicy, FileLedger
 from keyhole.controlplane.runner import run_local
 from keyhole.controlplane.store import FileStore
-from keyhole.schema.bandwidth import bandwidth_bits
+from keyhole.schema.bandwidth import bandwidth_bits, run_channel_bits
 from keyhole.schema.spec import OutputSchema
 
 
@@ -166,6 +166,10 @@ def _run_local_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
     store.put_attestation(outcome.attestation)
 
     _print_result(outcome.result, schema, budget, args.principal)
+    # With --data, whoever runs this supplied the data, so they are its owner and may see the audit.
+    owner_reason = outcome.audit.withheld_reason
+    if owner_reason and owner_reason != outcome.result.withheld_reason:
+        print(f"owner view: {outcome.audit.status.value}: {owner_reason}")
 
     if args.save_attestation:
         Path(args.save_attestation).write_text(outcome.attestation.model_dump_json(indent=2))
@@ -204,13 +208,14 @@ def _run_cloud_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
 def _print_result(r, schema: OutputSchema, budget, principal: str) -> None:
     print(f"run:        {r.run_id}")
     print(f"status:     {r.status.value}")
-    print(f"bandwidth:  {bandwidth_bits(schema):.2f} bits (max that could leave)")
+    print(f"bandwidth:  {bandwidth_bits(schema):.2f} bits per answer, "
+          f"{run_channel_bits(schema):.2f} per run (max that could leave)")
     if r.status.value == "succeeded":
         print(f"output:     {json.dumps(r.output)}")
     else:
         print(f"withheld:   {r.withheld_reason}")
     if budget is not None and r.cumulative_exit_bits is not None:
-        print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits used"
+        print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits charged"
               f" (principal '{principal}')")
     print(f"attestation:{r.attestation_id}")
 

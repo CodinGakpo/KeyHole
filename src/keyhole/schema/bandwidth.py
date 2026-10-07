@@ -63,3 +63,15 @@ def bandwidth_bits(schema: OutputSchema) -> float:
 def bandwidth_bytes(schema: OutputSchema) -> float:
     """Bandwidth expressed in bytes, for human-readable reporting."""
     return bandwidth_bits(schema) / 8.0
+
+
+def run_channel_bits(schema: OutputSchema) -> float:
+    """Upper bound, in bits, on what one *run* reveals to its caller — the per-run budget charge.
+
+    A run ends in one of the schema's conforming values or in "not released" (every non-release
+    outcome looks identical to the caller), so it can signal one of N + 1 outcomes, where
+    N = 2**bandwidth_bits. log2(N + 1) is computed as b + log2(1 + 2**-b) to stay finite for wide
+    schemas.
+    """
+    b = bandwidth_bits(schema)
+    return b + math.log2(1 + 2.0**-b)

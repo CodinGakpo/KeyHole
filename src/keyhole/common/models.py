@@ -69,25 +69,36 @@ class DataFlowEvent(BaseModel):
 
 
 class RunResult(BaseModel):
-    """What a caller gets back for a run."""
+    """What a caller gets back for a run.
+
+    This is the *caller's* view, and the caller may be the untrusted party. Every non-release
+    outcome is reported identically (``WITHHELD``, a fixed reason, no exit code) so code cannot
+    signal through how it fails; the real outcome is in the data owner's :class:`AuditRecord`.
+    """
 
     run_id: str
     status: RunStatus
     output: Any | None = None  # the released, schema-conforming value (None if withheld/failed)
     withheld_reason: str | None = None
     exit_bandwidth_bits: float | None = None
-    cumulative_exit_bits: float | None = None  # principal's total released bits (if budgeted)
-    exit_code: int | None = None
+    cumulative_exit_bits: float | None = None  # principal's total charged bits (if budgeted)
+    exit_code: int | None = None  # 0 when released, else None
     duration_ms: int | None = None
     attestation_id: str | None = None
 
 
 class AuditRecord(BaseModel):
-    """Append-only record of a run, for the audit trail."""
+    """Append-only record of a run, for the data owner's audit trail.
+
+    Unlike :class:`RunResult`, this keeps the real outcome: FAILED / TIMEOUT / WITHHELD, the reason
+    and the exit code.
+    """
 
     run_id: str
     created_at: datetime = Field(default_factory=utcnow)
     status: RunStatus
+    withheld_reason: str | None = None
+    exit_code: int | None = None
     code_sha256: str
     data_sha256: str
     schema_sha256: str
@@ -96,7 +107,7 @@ class AuditRecord(BaseModel):
     code_provider: str | None = None
     dataset_id: str | None = None
     exit_bandwidth_bits: float | None = None
-    cumulative_exit_bits: float | None = None  # principal's total released bits (if budgeted)
+    cumulative_exit_bits: float | None = None  # principal's total charged bits (if budgeted)
     egress_attempts: int = 0
     egress_denied: int = 0
     dlp_findings: int = 0

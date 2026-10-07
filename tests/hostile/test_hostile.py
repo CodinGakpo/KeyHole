@@ -15,7 +15,9 @@ from keyhole.attest.sign import Ed25519Signer
 from keyhole.attest.verify import verify_attestation
 from keyhole.common.models import Limits, RunRequest, RunStatus, utcnow
 from keyhole.controlplane.budget import BudgetPolicy, InMemoryLedger
+from keyhole.controlplane.gate import NOT_RELEASED
 from keyhole.controlplane.runner import run_local
+from keyhole.schema.bandwidth import run_channel_bits
 from keyhole.schema.spec import OutputSchema, SchemaType
 
 # A stand-in "sensitive dataset" the untrusted code is allowed to read but must not leak.
@@ -100,7 +102,7 @@ json.dump("AKIAIOSFODNN7EXAMPLE", open(os.environ["KEYHOLE_OUTPUT"], "w"))
     schema = OutputSchema(type=SchemaType.STRING, max_length=64)
     outcome = _run(code, schema, signer)
     assert outcome.result.status is RunStatus.WITHHELD
-    assert "DLP" in outcome.result.withheld_reason
+    assert "DLP" in outcome.audit.withheld_reason
 
 
 def test_stdout_is_not_an_exit_channel(signer):
@@ -157,9 +159,10 @@ import os, json
 data = open("customers.csv").read()
 json.dump(len(data) % 2 == 0, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
-    schema = OutputSchema(type=SchemaType.BOOLEAN)  # 1 bit per run
+    schema = OutputSchema(type=SchemaType.BOOLEAN)  # 1 bit per answer, log2(3) per run
+    per_run = run_channel_bits(schema)
     ledger = InMemoryLedger()
-    budget = BudgetPolicy(max_exit_bits=3.0)  # allow exactly 3 one-bit releases, ever
+    budget = BudgetPolicy(max_exit_bits=3 * per_run)  # exactly 3 runs, ever
 
     statuses = [
         _run(code, schema, signer, ledger=ledger, budget=budget, principal="agent-7").result.status
@@ -170,11 +173,11 @@ json.dump(len(data) % 2 == 0, open(os.environ["KEYHOLE_OUTPUT"], "w"))
     assert statuses[:3] == [RunStatus.SUCCEEDED] * 3
     assert all(s is RunStatus.WITHHELD for s in statuses[3:])
     # The cumulative leak never exceeds the cap, no matter how many times the attacker calls.
-    assert ledger.spent("agent-7", None, utcnow()) == 3.0
+    assert ledger.spent("agent-7", None, utcnow()) == pytest.approx(3 * per_run)
 
 
-def test_withheld_run_does_not_consume_budget(signer):
-    # A non-conforming (withheld) run leaks nothing, so it must not spend any budget.
+def test_withheld_run_still_consumes_budget(signer):
+    # "Was it released?" is itself information, so a withheld run is charged like any other.
     good = """
 import os, json
 json.dump(True, open(os.environ["KEYHOLE_OUTPUT"], "w"))
@@ -184,15 +187,51 @@ import os, json
 json.dump("not-a-boolean", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.BOOLEAN)
+    per_run = run_channel_bits(schema)
     ledger = InMemoryLedger()
-    budget = BudgetPolicy(max_exit_bits=2.0)
+    budget = BudgetPolicy(max_exit_bits=10.0)
 
     good_out = _run(good, schema, signer, ledger=ledger, budget=budget, principal="p")
     bad_out = _run(bad, schema, signer, ledger=ledger, budget=budget, principal="p")
     assert good_out.result.status is RunStatus.SUCCEEDED
     assert bad_out.result.status is RunStatus.WITHHELD
-    # Only the one released bit was charged.
-    assert ledger.spent("p", None, utcnow()) == 1.0
+    assert ledger.spent("p", None, utcnow()) == pytest.approx(2 * per_run)
+
+
+def _caller_view(outcome) -> tuple:
+    """Everything a (possibly hostile) caller gets back that the code could try to influence."""
+    r, a = outcome.result, outcome.attestation
+    return (r.status, r.output, r.withheld_reason, r.exit_code,
+            a.output, a.output_sha256, a.exit_code, a.released, a.egress_attempts, a.egress_denied)
+
+
+def test_exit_code_side_channel_is_closed(signer):
+    # Attack: smuggle a byte of the secret out through the process exit status (0-255, ~8 bits
+    # per run) instead of the output, and through *how* the run fails. Every non-release outcome
+    # must look identical to the caller, so none of it carries information.
+    leak_byte = """
+import sys
+data = open("customers.csv").read()
+sys.exit(ord(data[{i}]) or 1)
+"""
+    other_failures = [
+        "import os; open(os.environ['KEYHOLE_OUTPUT'], 'w').write('not json')",  # invalid JSON
+        "import os, json; json.dump('nope', open(os.environ['KEYHOLE_OUTPUT'], 'w'))",  # bad value
+        "pass",  # no output at all
+        "raise RuntimeError('boom')",  # crash
+    ]
+    schema = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
+
+    byte_runs = [_run(leak_byte.format(i=i), schema, signer) for i in range(4)]
+    other_runs = [_run(code, schema, signer) for code in other_failures]
+
+    # The code really did signal different values — the owner's audit sees them ...
+    assert len({o.audit.exit_code for o in byte_runs}) > 1
+    # ... but the caller sees one identical, opaque outcome for every one of these runs.
+    views = {_caller_view(o) for o in byte_runs + other_runs}
+    assert len(views) == 1
+    (only,) = views
+    assert only[0] is RunStatus.WITHHELD and only[2] == NOT_RELEASED and only[3] is None
 
 
 @pytest.mark.skipif(

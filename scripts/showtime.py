@@ -32,7 +32,8 @@ RED, GREEN, YELLOW, CYAN = "\033[31m", "\033[32m", "\033[33m", "\033[36m"
 
 def runs_to_steal() -> int:
     """Runs needed to drain the whole file through a 3-way enum exit."""
-    return math.ceil((ROOT / "examples/customers.csv").stat().st_size * 8 / math.log2(3))
+    # Per run the caller learns one of 3 labels or "not released": log2(3 + 1) = 2 bits.
+    return math.ceil((ROOT / "examples/customers.csv").stat().st_size * 8 / math.log2(3 + 1))
 
 
 def width() -> int:

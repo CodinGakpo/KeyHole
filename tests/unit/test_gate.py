@@ -6,8 +6,9 @@ from keyhole.attest.sign import Ed25519Signer
 from keyhole.attest.verify import verify_attestation
 from keyhole.common.models import DataFlowEvent, DataFlowEventKind, Limits, RunRequest, utcnow
 from keyhole.controlplane.budget import BudgetPolicy, InMemoryLedger
-from keyhole.controlplane.gate import run_exit_gate
+from keyhole.controlplane.gate import NOT_RELEASED, run_exit_gate
 from keyhole.executor.entrypoint import ExecResult
+from keyhole.schema.bandwidth import run_channel_bits
 from keyhole.schema.spec import OutputSchema, SchemaType
 
 
@@ -60,7 +61,8 @@ def test_oversized_output_is_withheld():
     ex = _exec("x" * 10, output_bytes=999_999)
     outcome = run_exit_gate("r3", _request(schema, max_output_bytes=1024), ex, signer)
     assert outcome.result.status.value == "withheld"
-    assert "exceeds" in outcome.result.withheld_reason
+    assert outcome.result.withheld_reason == NOT_RELEASED  # caller: opaque
+    assert "exceeds" in outcome.audit.withheld_reason  # owner: the detail
 
 
 def test_non_json_output_is_withheld():
@@ -71,12 +73,13 @@ def test_non_json_output_is_withheld():
     assert outcome.result.status.value == "withheld"
 
 
-def test_timeout_is_reported():
+def test_timeout_is_opaque_to_the_caller_and_recorded_for_the_owner():
     schema = OutputSchema(type=SchemaType.INTEGER)
     signer = Ed25519Signer.generate()
     ex = _exec(None, exit_code=None, timed_out=True)
     outcome = run_exit_gate("r5", _request(schema), ex, signer)
-    assert outcome.result.status.value == "timeout"
+    assert outcome.result.status.value == "withheld"
+    assert outcome.audit.status.value == "timeout"
 
 
 def test_egress_attempts_recorded_in_attestation():
@@ -98,23 +101,25 @@ def test_secret_in_output_is_caught_by_backstop():
     leaked = "AKIAIOSFODNN7EXAMPLE"
     outcome = run_exit_gate("r7", _request(schema), _exec(leaked), signer)
     assert outcome.result.status.value == "withheld"
-    assert "DLP" in outcome.result.withheld_reason
+    assert "DLP" in outcome.audit.withheld_reason
 
 
 def test_budget_withholds_a_conforming_output_once_the_cap_is_hit():
-    # A 2-choice enum is 1 bit/run; a 1-bit budget allows exactly one release, then withholds.
+    # A 2-choice enum reveals log2(3) bits per run (2 answers + "not released"); a budget of
+    # exactly one run's worth admits one run, then withholds whatever the code does.
     schema = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham"])
+    per_run = run_channel_bits(schema)
     signer = Ed25519Signer.generate()
-    ledger, budget = InMemoryLedger(), BudgetPolicy(max_exit_bits=1.0)
+    ledger, budget = InMemoryLedger(), BudgetPolicy(max_exit_bits=per_run)
 
     req = _request(schema, principal="alice")
     first = run_exit_gate("b1", req, _exec("spam"), signer, ledger=ledger, budget=budget)
     assert first.result.status.value == "succeeded"
-    assert first.result.cumulative_exit_bits == 1.0
+    assert first.result.cumulative_exit_bits == per_run
 
     second = run_exit_gate("b2", req, _exec("ham"), signer, ledger=ledger, budget=budget)
     assert second.result.status.value == "withheld"
     assert second.result.output is None
     assert "budget exceeded" in second.result.withheld_reason
-    # The over-budget run released nothing, so it must not have consumed any budget.
-    assert ledger.spent("alice", None, utcnow()) == 1.0
+    # A refused run is not charged: it revealed nothing beyond what the caller already knew.
+    assert ledger.spent("alice", None, utcnow()) == per_run
