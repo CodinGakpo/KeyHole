@@ -24,8 +24,9 @@ sbx run code.py --data d.csv --schema s.json
   → control plane: validate schema, upload input bundle to S3, presign GET (input) + PUT (output)
   → ecs.run_task → Fargate: init-chown, then sandbox fetches the presigned bundle, runs the code
     (no internet route, empty task role, read-only root), PUTs the output envelope back to S3
-  → control plane EXIT GATE: validate vs schema → bandwidth → DLP backstop → cumulative budget
-    → release or withhold → sign attestation (either way)
+  → control plane EXIT GATE: cumulative budget → validate vs schema → bandwidth → DLP backstop
+    → release or withhold → charge budget + sign attestation (either way); the caller sees only
+    released-or-withheld, the owner's audit record keeps the real outcome
   → GET /runs/{id} returns released output + attestation; sbx verify checks it independently
 ```
 

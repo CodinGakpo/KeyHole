@@ -35,10 +35,10 @@ wiped on each start. One line to say per beat — let the screen do the rest:
 
 | Beat | On screen | Say |
 |---|---|---|
-| 1. Data vs exit | 3,312-bit bar vs a 1.58-bit sliver; 2,090-square grid | "The code sees all of this. Only this much can come out." |
+| 1. Data vs exit | 3,312-bit bar vs a 1.58-bit sliver; 1,656-square grid (2 bits a run) | "The code sees all of this. Only this much can come out." |
 | 2. Honest code | `classify.py` → green **RELEASED** `"spam"` | "Fits the schema, passes the scans, gets signed and released." |
 | 3. Malicious code | `exfil.py` → red **WITHHELD** | "Nobody searched for the data. It just doesn't fit." |
-| 4. Drip attack | budget meter fills over 5 runs, run 6 refused | "Small leaks add up, so each caller has a total bit budget." |
+| 4. Drip attack | meter fills 2 bits a run (3 labels + "not released"); run 5 refused | "Small leaks add up, so each caller has a total bit budget." |
 | 5. Clean room | partner runs on acme's data; intruder **REFUSED** | "The partner computed on data it never received." |
 | 6. Proof | receipt **VALID** → change one field → **INVALID** | "Anyone can check this offline. Touch one byte and it breaks." |
 
@@ -56,7 +56,7 @@ sbx run examples/classify.py --data customers.csv=examples/customers.csv \
 sbx run examples/exfil.py --data customers.csv=examples/customers.csv \
     --schema schemas/label.json --local
 
-# 4. Drip attack — runs 1–5 released, run 6 withheld
+# 4. Drip attack — runs 1–4 released (2 bits each), runs 5–6 withheld
 for i in 1 2 3 4 5 6; do
   sbx run examples/classify.py --data customers.csv=examples/customers.csv \
       --schema schemas/label.json --local --principal mallory --budget-bits 8 | grep -E "status|budget"
@@ -84,7 +84,7 @@ The drip ledger persists in `~/.keyhole/ledger.json`; use a fresh `--principal` 
 
 ```bash
 make hostile     # the adversarial suite: dump, encode, stdout, fork bomb, memory hog, drip, clean room
-make test        # everything: 90 passed, 2 skipped
+make test        # everything: 91 passed, 2 skipped
 ```
 
 ## Be precise about what the local demo proves

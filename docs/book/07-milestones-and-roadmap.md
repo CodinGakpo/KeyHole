@@ -22,9 +22,9 @@ bill near zero.
 
 ## Beyond the base (shipped)
 
-- **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
-  runs, so drip exfiltration through released answers is bounded too (run status is the
-  remaining gap — ch. 4).
+- **Cumulative exit-bandwidth budget** — a per-principal ledger caps the *total* bits a caller can
+  learn across runs; every run is charged log₂(N + 1), released or not.
+- **Run-status side channel closed** — non-release outcomes are opaque to the caller (ch. 4).
 - **Bounded `array` schema type** — list answers with a required `max_items`, bandwidth still finite.
 - **Web dashboard** (`sbx dashboard`) — a self-contained, read-only viewer of the run/audit trail
   whose signature element is the exit-bandwidth aperture gauge.

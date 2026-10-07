@@ -38,20 +38,18 @@ locally, only the exit gate's guarantees apply.
   choose the permitted value to encode a few bits. This is **bounded** to the schema's bandwidth
   and **disclosed** — the exact released bytes are recorded in the signed attestation. We never
   claim "zero leak."
-- Repeated runs could accumulate that residual. A **per-caller cumulative budget** caps the total
-  bits released across runs (`controlplane/budget.py`).
-
-## Known gap: run status is a side channel
-
-The budget charges only *released* runs, but every run's **status is visible to the caller**, and a
-failed run reports its exit code (`controlplane/gate.py`). Code can therefore signal through *how*
-it fails — up to ~8 bits per run via the exit code, uncharged and unlimited in run count.
-Released-vs-withheld and timeout-vs-not carry smaller amounts the same way.
-
-**Planned fix:** return one opaque non-release status with no detail to the caller (details stay in
-the audit log for the data owner) and charge the budget for every run. The per-run bound then
-becomes log₂(choices + 1) — the extra outcome is "not released". It ships with a hostile test that
-attempts exactly this exfiltration.
+- **Run status is opaque.** Code could also signal through *how* a run fails (crash, timeout, exit
+  code 0–255). So the caller sees only "released + value" or one fixed "withheld"; the real outcome,
+  reason and exit code go to the data owner's audit record. One run therefore reveals at most
+  log₂(N + 1) bits for a schema with N possible values. Proven by
+  `test_exit_code_side_channel_is_closed`, which exits with secret bytes and checks that every
+  non-release outcome looks identical to the caller.
+- **Repetition is capped.** A **per-caller cumulative budget** charges every run log₂(N + 1) bits,
+  released or not, and once it is spent every further run is withheld regardless of what the code
+  does (`controlplane/budget.py`).
+- **Caveat — audit access.** The cloud API has no authentication yet, so its owner-detail audit endpoint (`GET /runs/{id}/audit`) is readable by anyone with the URL. Opaque status holds only if the
+  caller cannot read the owner's audit; the API needs authentication before that is true in the
+  cloud. Locally, whoever supplies `--data` is the owner and sees the detail.
 
 ## Out of scope (named, not hidden)
 

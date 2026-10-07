@@ -23,7 +23,7 @@ keyhole/
 │   ├── attest/       # record.py, sign.py (ed25519), kms_signer.py (KMS), keys.py,
 │   │                 #   verify.py (standalone verifier)                             ← verifiability
 │   ├── dlp/          # secret_scan.py, pii_scan.py  — secondary backstop only
-│   ├── controlplane/ # gate.py (validate → bandwidth → DLP → budget → release → sign),
+│   ├── controlplane/ # gate.py (budget → validate → bandwidth → DLP → release → sign),
 │   │                 #   runner.py (local), cloud_runner.py + launcher.py (Fargate), app.py (Lambda),
 │   │                 #   budget.py, cleanroom.py, store.py, quotas.py
 │   ├── executor/     # entrypoint.py (local subprocess executor), limits.py (rlimits)
@@ -51,7 +51,7 @@ keyhole/
 | `schema/bandwidth.py` | Compute a schema's information content (bits). | `schema/spec` |
 | `attest/record.py` / `sign.py` / `kms_signer.py` / `verify.py` | Build, sign (ed25519 locally, KMS in the cloud), and independently verify attestations. | `common` |
 | `dlp/*` | Secondary secret/PII backstop over the small output. | `common` |
-| `controlplane/gate.py` | The exit gate: validate → bandwidth → DLP → budget → release → sign. | `schema`, `attest`, `dlp` |
+| `controlplane/gate.py` | The exit gate: budget → validate → bandwidth → DLP → release → charge → sign. | `schema`, `attest`, `dlp` |
 | `controlplane/budget.py` / `cleanroom.py` | Cumulative per-caller bit budget; two-principal dataset grants. | `common` |
 | `controlplane/launcher.py` | Build the hardened `ecs.run_task` call (empty task role, private subnet, no public IP). | `common` |
 | `controlplane/store.py` / `quotas.py` | Run state + audit persistence; cost/concurrency guardrails. | `common` |

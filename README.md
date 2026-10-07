@@ -52,8 +52,8 @@ sbx run examples/exfil.py --data customers.csv=examples/customers.csv \
 
 On top of that one idea:
 
-- **A bit budget per caller.** Asking many small questions could add up, so each caller has a
-  cumulative cap on released bits (`--principal mallory --budget-bits 8`).
+- **A bit budget per caller.** Asking many small questions could add up, so every run is charged
+  what it could reveal, and each caller has a cumulative cap (`--principal mallory --budget-bits 8`).
 - **A signed receipt for every run.** The attestation binds the hashes of the code, data and schema,
   the exact output, and who was involved. Change one field and verification fails.
 - **A locked-down cloud.** On AWS the code runs on Fargate in a subnet with no internet route, an
@@ -85,8 +85,9 @@ flowchart LR
 
 The code runs in one trust domain; the **exit gate** runs in another. The code has full freedom
 inside the box and no authority over the gate, so it can't change the schema it's judged by. The
-gate checks, in order: does the output fit the schema → how many bits could it carry → does a
-secondary DLP scan flag it → is the caller within budget → release, and sign a receipt either way.
+gate checks, in order: can the caller afford this run → does the output fit the schema → how many
+bits could it carry → does a secondary DLP scan flag it → release. It charges the budget and signs
+a receipt either way.
 
 ## What it guarantees — and what it doesn't
 
@@ -95,11 +96,12 @@ can see the data. It claims a **disclosed ceiling**.
 
 - **Guaranteed:** a released answer carries at most the schema's bandwidth; anything that doesn't
   fit is withheld; every run is signed and tamper-evident.
-- **Bounded, not zero:** code can choose *which* allowed answer to give, leaking up to the schema's
-  bits per run. The per-caller budget caps the total of released answers.
-- **Known gap:** run *status* is a side channel. A failed run reports its exit code and is not
-  charged to the budget, so code could signal through how it fails. Fix planned: collapse every
-  non-release outcome into one opaque status and charge every run.
+- **Bounded, not zero:** code can choose *which* allowed answer to give — or to give none. Every
+  non-release outcome looks identical to the caller (crashes, timeouts and exit codes go only to the
+  data owner's audit log), so one run reveals at most log₂(N + 1) bits: 2 bits for three labels.
+  The budget charges every run that amount, released or not.
+- **Caveat:** The cloud API has no authentication yet, so its owner-detail audit endpoint (`GET /runs/{id}/audit`) is readable by anyone with the URL; the opaque-status guarantee needs owner-only access
+  to it.
 - **Out of scope:** timing side channels, what a legitimate answer itself reveals, and breaking
   AWS's own isolation. See [`SECURITY.md`](SECURITY.md).
 
@@ -194,7 +196,7 @@ Next: see [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md).
 | Path | What |
 |---|---|
 | `src/keyhole/schema/` | The narrow exit and its bandwidth accounting — the core guarantee. |
-| `src/keyhole/controlplane/gate.py` | The exit gate: validate → bandwidth → DLP → budget → release → sign. |
+| `src/keyhole/controlplane/gate.py` | The exit gate: budget → validate → bandwidth → DLP → release → charge → sign. |
 | `src/keyhole/attest/` | Signed, verifiable attestations (ed25519 locally, KMS in the cloud). |
 | `src/keyhole/executor/` | Local executor matching the cloud contract. |
 | `src/keyhole/cli/`, `src/keyhole/mcp/` | CLI (`sbx`) and MCP server. |

@@ -33,18 +33,18 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
   real AWS: honest run released + KMS-attested, exfil withheld, attestation VALID against the
   exported KMS public key (tamper → INVALID), run + audit persisted; then destroyed (~$1/mo KMS,
   the rest free/pennies).
-- ✅ **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
-  runs (optional rolling window), so drip exfiltration through *released answers* is bounded, not
-  just each run. Proven by `test_drip_exfiltration_over_runs`. Gap: run status is not yet charged
-  (see Next).
+- ✅ **Cumulative exit-bandwidth budget** — a per-principal ledger caps the *total* bits a caller can
+  learn across runs (optional rolling window). Proven by `test_drip_exfiltration_over_runs`.
+- ✅ **Run-status side channel closed** — every non-release outcome is identical to the caller (the
+  real outcome goes to the owner's audit record), and every run is charged log₂(N + 1) bits,
+  released or not. Proven by `test_exit_code_side_channel_is_closed`.
 - ✅ **Bounded `array` schema type** — list-shaped answers with a required `max_items`, so their
   exit bandwidth (`max_items × item_bits`) is always finite and disclosed.
 
 ## Next
 
-- **Close the run-status side channel.** A failed run reports its exit code and isn't charged to the
-  budget, so code can signal ~8 bits per run through how it fails. Fix: one opaque non-release
-  status, budget charged on every run, plus a hostile test (see [`SECURITY.md`](SECURITY.md)).
+- **Authenticate the cloud API.** Opaque run status needs the owner-detail audit endpoint
+  (`GET /runs/{id}/audit`) to be owner-only; today the API has no authentication at all.
 
 Then, grouped in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md): hardware-anchored attestation
 (Nitro), timing-channel mitigation, differential-privacy exit mode, wider/free-form exit opt-in,
