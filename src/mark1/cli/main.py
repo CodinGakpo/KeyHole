@@ -306,7 +306,8 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
     print("Mark-1 environment check")
     print(f"  python:     {sys.version.split()[0]}")
-    print(f"  docker:     {'found' if shutil.which('docker') else 'MISSING (needed for M1 image runs)'}")
+    docker = "found" if shutil.which("docker") else "MISSING (needed for M1 image runs)"
+    print(f"  docker:     {docker}")
     print(f"  terraform:  {'found' if shutil.which('terraform') else 'missing (needed to deploy)'}")
     try:
         import cryptography  # noqa: F401

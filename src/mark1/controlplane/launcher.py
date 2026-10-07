@@ -8,7 +8,7 @@ baked into the task definition — are unit-testable without AWS. The actual API
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 

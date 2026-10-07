@@ -72,7 +72,11 @@ class OutputSchema(BaseModel):
         if t in (SchemaType.INTEGER, SchemaType.NUMBER):
             forbid("choices", "max_length", "charset", "pattern",
                    "items", "max_items", "properties")
-            if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            if (
+                self.minimum is not None
+                and self.maximum is not None
+                and self.minimum > self.maximum
+            ):
                 raise ValueError("minimum must be <= maximum")
         elif t is SchemaType.BOOLEAN:
             forbid("minimum", "maximum", "choices", "max_length", "charset", "pattern",
@@ -87,7 +91,9 @@ class OutputSchema(BaseModel):
         elif t is SchemaType.STRING:
             forbid("minimum", "maximum", "choices", "items", "max_items", "properties")
             if self.max_length is None:
-                raise ValueError("string schema requires 'max_length' (an unbounded string is a wide exit)")
+                raise ValueError(
+                    "string schema requires 'max_length' (an unbounded string is a wide exit)"
+                )
             if self.charset is not None and len(self.charset) == 0:
                 raise ValueError("charset, if given, must be non-empty")
         elif t is SchemaType.ARRAY:
@@ -103,7 +109,9 @@ class OutputSchema(BaseModel):
             if not self.properties:
                 raise ValueError("object schema requires a non-empty 'properties' map")
             if len(self.properties) > MAX_OBJECT_PROPERTIES:
-                raise ValueError(f"object schema may declare at most {MAX_OBJECT_PROPERTIES} properties")
+                raise ValueError(
+                    f"object schema may declare at most {MAX_OBJECT_PROPERTIES} properties"
+                )
         return self
 
     @classmethod

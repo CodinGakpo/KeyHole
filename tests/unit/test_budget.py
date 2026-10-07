@@ -1,6 +1,6 @@
 """Cumulative exit-bandwidth budget: bounds total released bits per principal over a window."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from mark1.controlplane.budget import (
     BudgetPolicy,
@@ -9,7 +9,7 @@ from mark1.controlplane.budget import (
     check_budget,
 )
 
-NOW = datetime(2026, 7, 19, 12, 0, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 19, 12, 0, 0, tzinfo=UTC)
 
 
 def test_allows_up_to_the_cap_then_denies():

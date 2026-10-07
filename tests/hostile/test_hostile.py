@@ -73,7 +73,8 @@ json.dump(data, open(os.environ["MARK1_OUTPUT"], "w"))  # far longer than the bo
 
 
 def test_bounded_channel_is_disclosed_when_used(signer):
-    # A conforming small answer IS released - and the exact bytes are attested and bandwidth-bounded.
+    # A conforming small answer IS released - and the exact bytes are attested and
+    # bandwidth-bounded.
     code = """
 import os, json
 data = open("customers.csv").read()
@@ -196,7 +197,9 @@ json.dump("not-a-boolean", open(os.environ["MARK1_OUTPUT"], "w"))
 
 @pytest.mark.skipif(
     not os.environ.get("MARK1_CLOUD"),
-    reason="network-egress containment is enforced by the egress proxy; asserted in the cloud suite",
+    reason=(
+        "network-egress containment is enforced by the egress proxy; asserted in the cloud suite"
+    ),
 )
 def test_network_exfil_is_blocked(signer):  # pragma: no cover - runs only against cloud
     code = """

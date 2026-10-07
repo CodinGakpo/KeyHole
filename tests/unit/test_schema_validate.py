@@ -62,12 +62,12 @@ def test_object_is_closed():
 
 
 def test_string_requires_max_length():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.STRING)  # unbounded string is a wide exit -> rejected
 
 
 def test_enum_requires_choices():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.ENUM)
 
 
@@ -101,14 +101,14 @@ def test_array_nested_in_object():
 
 
 def test_array_requires_items_and_max_items():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.ARRAY, items=_schema(type=SchemaType.BOOLEAN))  # no max_items
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.ARRAY, max_items=5)  # no items schema
 
 
 def test_non_array_types_reject_array_fields():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.BOOLEAN, max_items=3)
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         _schema(type=SchemaType.ENUM, choices=["a"], items=_schema(type=SchemaType.BOOLEAN))

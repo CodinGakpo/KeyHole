@@ -7,7 +7,7 @@ executor. They are defined here, once, so no component invents its own dialect.
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ from mark1.schema.spec import OutputSchema
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class RunStatus(str, enum.Enum):
@@ -44,9 +44,12 @@ class RunRequest(BaseModel):
     data: dict[str, str] = Field(default_factory=dict)  # filename -> contents supplied into the box
     output_schema: OutputSchema
     limits: Limits = Field(default_factory=Limits)
-    principal: str = "default"  # the CODE-PROVIDER identity; the exit-bandwidth budget is keyed on it
-    data_owner: str | None = None  # clean room: who owns the dataset (None for inline self-supplied data)
-    dataset_id: str | None = None  # clean room: the registered dataset this run reads (None if inline)
+    # The CODE-PROVIDER identity; the exit-bandwidth budget is keyed on it.
+    principal: str = "default"
+    # Clean room: who owns the dataset (None for inline self-supplied data).
+    data_owner: str | None = None
+    # Clean room: the registered dataset this run reads (None if inline).
+    dataset_id: str | None = None
 
 
 class DataFlowEventKind(str, enum.Enum):

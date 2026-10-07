@@ -62,7 +62,9 @@ def validate_output(value: Any, schema: OutputSchema, _path: str = "$") -> Valid
             errs.append(f"{_path}: expected string, got {_typename(value)}")
         else:
             if len(value) > schema.max_length:
-                errs.append(f"{_path}: string length {len(value)} exceeds max_length {schema.max_length}")
+                errs.append(
+                    f"{_path}: string length {len(value)} exceeds max_length {schema.max_length}"
+                )
             if schema.charset is not None:
                 allowed = set(schema.charset)
                 if any(ch not in allowed for ch in value):

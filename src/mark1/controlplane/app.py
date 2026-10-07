@@ -153,7 +153,9 @@ def _body(event: dict) -> dict:
 
 def _found(model) -> dict:
     """200 with the model's JSON, or 404 if it is None."""
-    return _json(200, model.model_dump(mode="json")) if model else _json(404, {"error": "not found"})
+    if model is None:
+        return _json(404, {"error": "not found"})
+    return _json(200, model.model_dump(mode="json"))
 
 
 def _json(status: int, payload: dict) -> dict:

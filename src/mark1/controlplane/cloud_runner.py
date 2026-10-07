@@ -195,7 +195,9 @@ def _fetch_result(s3, bucket: str, output_key: str, stopped_reason: str | None) 
 
     env = json.loads(body)
     events.append(
-        DataFlowEvent(kind=DataFlowEventKind.OUTPUT_WRITTEN, detail=f"{env.get('output_bytes', 0)} bytes")
+        DataFlowEvent(
+            kind=DataFlowEventKind.OUTPUT_WRITTEN, detail=f"{env.get('output_bytes', 0)} bytes"
+        )
     )
     return ExecResult(
         exit_code=env.get("exit_code"),

@@ -9,7 +9,6 @@ import pytest
 from mark1.attest.sign import Ed25519Signer
 from mark1.common.models import Limits, RunRequest, RunStatus
 from mark1.controlplane import app as app_mod
-from mark1.controlplane import cloud_runner
 from mark1.controlplane.app import get_run, submit_run
 from mark1.controlplane.cloud_runner import CloudConfig, SubmitResult
 from mark1.controlplane.gate import run_exit_gate
