@@ -8,4 +8,4 @@ import os
 import json
 
 stolen = open("customers.csv").read()
-json.dump(stolen, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(stolen, open(os.environ["KEYHOLE_OUTPUT"], "w"))

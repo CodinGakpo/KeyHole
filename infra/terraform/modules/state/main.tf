@@ -4,7 +4,7 @@
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 
 variable "kms_key_arn" {

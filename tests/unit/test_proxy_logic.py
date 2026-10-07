@@ -1,6 +1,6 @@
 """Unit tests for the egress proxy's pure decision logic.
 
-The proxy image is standalone (no mark1 dependency), so we load its module by path and test the
+The proxy image is standalone (no keyhole dependency), so we load its module by path and test the
 deny-by-default parsing/allowlist logic without needing Docker or a socket.
 """
 
@@ -14,7 +14,7 @@ _PROXY_PATH = Path(__file__).resolve().parents[2] / "images" / "egress-proxy" / 
 
 @pytest.fixture(scope="module")
 def proxy():
-    spec = importlib.util.spec_from_file_location("mark1_egress_proxy", _PROXY_PATH)
+    spec = importlib.util.spec_from_file_location("keyhole_egress_proxy", _PROXY_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

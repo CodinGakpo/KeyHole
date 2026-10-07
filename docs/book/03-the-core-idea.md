@@ -20,7 +20,7 @@ We treat this as a design constraint, not an inconvenience to paper over.
 
 If you can't reliably inspect *what* leaves, then **control how much can leave.**
 
-Mark-1's rule: untrusted code may return **only a value that matches a caller-declared, narrow,
+Keyhole's rule: untrusted code may return **only a value that matches a caller-declared, narrow,
 typed schema.** Not a free-form blob — a shape the caller commits to in advance:
 
 - an **integer** (optionally range-bounded),
@@ -40,13 +40,13 @@ This is the difference between:
 | Approach | Guarantee rests on | Defeated by |
 |---|---|---|
 | DLP over free-form output | *inspecting* what leaves | encrypt-before-emit (trivially) |
-| **Typed narrow exit (Mark-1)** | *bounding how much* can leave | nothing within the declared bound |
+| **Typed narrow exit (Keyhole)** | *bounding how much* can leave | nothing within the declared bound |
 
 ## Being precise about what remains
 
 The narrow exit is a **bound, not a zero.** Whatever bits the schema legitimately carries are a
 residual channel: a malicious script *could* choose the enum value or the bounded-string content to
-encode a few bits of the secret. Mark-1 does two honest things about this:
+encode a few bits of the secret. Keyhole does two honest things about this:
 
 1. **States the bound.** For each run it computes and records the exit's information content (e.g.
    "this schema permits at most N bits to leave").
@@ -66,19 +66,19 @@ exact released output and its hash. Anyone holding the attestation can later ver
 > *This exact code ran on this exact data with zero network egress, and the only thing that came out
 > was this bounded value.*
 
-That verifiability is what elevates Mark-1 from "a secure sandbox" to a **verifiable
+That verifiability is what elevates Keyhole from "a secure sandbox" to a **verifiable
 confidential-compute primitive** — the kind of artifact a compliance or audit function can actually
 rely on.
 
 ## Why this is a different category, not a better competitor
 
 - **Isolation-first sandboxes** (E2B, Modal, AgentCore): free-form output, protect the *host* from
-  the code. Mark-1 protects the *data* from the code.
+  the code. Keyhole protects the *data* from the code.
 - **Confidential-computing enclaves** (AWS Nitro): protect a *trusted* workload's data from the
-  *host/operator*. Mark-1 protects a data owner from *untrusted* code.
+  *host/operator*. Keyhole protects a data owner from *untrusted* code.
 
 Nobody packages *untrusted code + sensitive data + bandwidth-bounded, attested exit.* That's the
-whitespace Mark-1 occupies.
+whitespace Keyhole occupies.
 
 ## The honest fit
 

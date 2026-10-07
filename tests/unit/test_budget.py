@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from mark1.controlplane.budget import (
+from keyhole.controlplane.budget import (
     BudgetPolicy,
     FileLedger,
     InMemoryLedger,

@@ -1,6 +1,6 @@
-# The Mark-1 Book
+# The Keyhole Book
 
-A chapter-by-chapter record of what Mark-1 is, why it exists, and **every design decision** made
+A chapter-by-chapter record of what Keyhole is, why it exists, and **every design decision** made
 along the way — including the ideas that were tried and rejected. This is the narrative companion
 to the execution spec (see the approved plan in `/home/adi/.claude/plans/` and, once written, the
 formal spec under `docs/superpowers/specs/`).

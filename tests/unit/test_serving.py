@@ -1,20 +1,20 @@
 """The MCP tool and control-plane handler reuse the same guarantee."""
 
-from mark1.attest.keys import load_or_create_dev_signer
-from mark1.common.models import Limits, RunRequest
-from mark1.controlplane.app import handle_create_run_local, handle_get_run
-from mark1.controlplane.store import InMemoryStore
-from mark1.mcp.server import run_confidential
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.keys import load_or_create_dev_signer
+from keyhole.common.models import Limits, RunRequest
+from keyhole.controlplane.app import handle_create_run_local, handle_get_run
+from keyhole.controlplane.store import InMemoryStore
+from keyhole.mcp.server import run_confidential
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 _CLASSIFY = """
 import os, json
-json.dump("spam", open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump("spam", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 _EXFIL = """
 import os, json
-json.dump(open("d.txt").read(), open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(open("d.txt").read(), open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 

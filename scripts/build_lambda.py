@@ -1,6 +1,6 @@
 """Assemble dist/controlplane.zip for the control-plane Lambda.
 
-The Lambda handler is `mark1.controlplane.app.lambda_handler`. It needs the `mark1` package plus its
+The Lambda handler is `keyhole.controlplane.app.lambda_handler`. It needs the `keyhole` package plus its
 runtime deps (pydantic, cryptography) as **Lambda-compatible (manylinux) wheels** — building on a
 non-Lambda host would otherwise bundle wheels for the wrong platform. boto3 is provided by the
 Lambda runtime, so it is intentionally excluded to keep the zip small.
@@ -43,8 +43,8 @@ def main() -> int:
         check=True,
     )
 
-    # The mark1 package itself (source; pure Python).
-    shutil.copytree(ROOT / "src" / "mark1", BUILD / "mark1")
+    # The keyhole package itself (source; pure Python).
+    shutil.copytree(ROOT / "src" / "keyhole", BUILD / "keyhole")
 
     if (DIST / "controlplane.zip").exists():
         (DIST / "controlplane.zip").unlink()

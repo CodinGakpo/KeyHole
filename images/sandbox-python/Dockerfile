@@ -1,5 +1,5 @@
 # Minimal, non-root, read-only-root-FS sandbox image.
-# Runs a single untrusted Python program and captures its typed output at $MARK1_OUTPUT.
+# Runs a single untrusted Python program and captures its typed output at $KEYHOLE_OUTPUT.
 # The strong isolation (no egress, empty task role, read-only FS) comes from the Fargate task
 # definition + network; this image just keeps the attack surface small.
 
@@ -19,10 +19,10 @@ USER 10001:10001
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    MARK1_OUTPUT=/sandbox/__mark1_output__.json
+    KEYHOLE_OUTPUT=/sandbox/__keyhole_output__.json
 
 # The in-container runner fetches code/data/schema (from S3 in the cloud) and executes them under
 # the same contract as the local executor. Copied last so image layers stay cache-friendly.
-COPY --chown=10001:10001 run_in_sandbox.py /opt/mark1/run_in_sandbox.py
+COPY --chown=10001:10001 run_in_sandbox.py /opt/keyhole/run_in_sandbox.py
 
-ENTRYPOINT ["python", "-I", "/opt/mark1/run_in_sandbox.py"]
+ENTRYPOINT ["python", "-I", "/opt/keyhole/run_in_sandbox.py"]

@@ -44,7 +44,7 @@ up)
         | openssl pkey -pubin -inform DER -outform PEM > /tmp/kms.pem
     echo
     echo "UP. Costs ~\$0.03/h and the API is unauthenticated; run 'stack.sh down' when done."
-    echo "  export MARK1_API_ENDPOINT=$(terraform output -raw api_endpoint)"
+    echo "  export KEYHOLE_API_ENDPOINT=$(terraform output -raw api_endpoint)"
     echo "  verify cloud attestations with: --pubkey /tmp/kms.pem"
     ;;
 down)

@@ -4,7 +4,7 @@
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 
 variable "sandbox_image" {
@@ -14,7 +14,7 @@ variable "sandbox_image" {
 
 variable "log_group_name" {
   type    = string
-  default = "/mark1/sandbox"
+  default = "/keyhole/sandbox"
 }
 
 data "aws_region" "current" {}

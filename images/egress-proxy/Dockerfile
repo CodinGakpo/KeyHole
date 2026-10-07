@@ -5,15 +5,15 @@
 
 FROM python:3.12-slim
 
-RUN groupadd --gid 10002 mark1proxy \
- && useradd  --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin mark1proxy
+RUN groupadd --gid 10002 keyholeproxy \
+ && useradd  --uid 10002 --gid 10002 --no-create-home --shell /usr/sbin/nologin keyholeproxy
 
-COPY proxy.py /opt/mark1/proxy.py
+COPY proxy.py /opt/keyhole/proxy.py
 
 USER 10002:10002
-# MARK1_ALLOWED_HOSTS is a comma-separated allowlist (empty => deny all).
-ENV MARK1_ALLOWED_HOSTS="" \
-    MARK1_PROXY_PORT=8080
+# KEYHOLE_ALLOWED_HOSTS is a comma-separated allowlist (empty => deny all).
+ENV KEYHOLE_ALLOWED_HOSTS="" \
+    KEYHOLE_PROXY_PORT=8080
 
 EXPOSE 8080
-ENTRYPOINT ["python", "-I", "/opt/mark1/proxy.py"]
+ENTRYPOINT ["python", "-I", "/opt/keyhole/proxy.py"]

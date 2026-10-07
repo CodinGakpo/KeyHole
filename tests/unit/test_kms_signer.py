@@ -6,10 +6,10 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.hashes import SHA256
 
-from mark1.attest.kms_signer import KmsSigner
-from mark1.attest.record import Attestation
-from mark1.attest.sign import sign_attestation
-from mark1.attest.verify import verify_attestation
+from keyhole.attest.kms_signer import KmsSigner
+from keyhole.attest.record import Attestation
+from keyhole.attest.sign import sign_attestation
+from keyhole.attest.verify import verify_attestation
 
 
 class _FakeKmsClient:
@@ -55,16 +55,16 @@ def _attestation() -> Attestation:
 
 
 def test_sign_uses_ecdsa_sha256_raw():
-    signer = KmsSigner(key_id="alias/mark1", kms_client=_FakeKmsClient())
+    signer = KmsSigner(key_id="alias/keyhole", kms_client=_FakeKmsClient())
     sig = signer.sign(b"payload")
     assert isinstance(sig, bytes) and sig
     assert signer.algorithm == "ecdsa-p256-sha256"
-    assert signer._kms.last_sign_kwargs["KeyId"] == "alias/mark1"
+    assert signer._kms.last_sign_kwargs["KeyId"] == "alias/keyhole"
 
 
 def test_kms_signed_attestation_verifies_and_tamper_fails():
     fake = _FakeKmsClient()
-    signer = KmsSigner(key_id="alias/mark1", kms_client=fake)
+    signer = KmsSigner(key_id="alias/keyhole", kms_client=fake)
     pubkey_pem = signer.public_key_pem()
 
     att = sign_attestation(_attestation(), signer)

@@ -40,7 +40,7 @@ showtime:
 	python scripts/showtime.py $(ARGS)
 
 showtime-dashboard:
-	MARK1_HOME=$$HOME/.mark1-showtime sbx dashboard
+	KEYHOLE_HOME=$$HOME/.keyhole-showtime sbx dashboard
 
 lambda-zip:
 	python scripts/build_lambda.py

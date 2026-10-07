@@ -10,12 +10,12 @@ doesn't.
 ## The monorepo layout
 
 ```
-mark-1/
+keyhole/
 ├── README.md ARCHITECTURE.md SECURITY.md ROADMAP.md
 ├── pyproject.toml  Makefile  .pre-commit-config.yaml
 ├── .github/workflows/ci.yml
 ├── schemas/          # example output schemas: label.json, score.json, extract-field.json
-├── src/mark1/
+├── src/keyhole/
 │   ├── common/       # models.py (RunRequest/OutputSchema/RunResult/Attestation/AuditRecord/DataFlowEvent),
 │   │                 #   config.py, api_client.py  — the shared contract
 │   ├── schema/       # spec.py (supported output types), validate.py, bandwidth.py   ← the guarantee
@@ -56,12 +56,12 @@ mark-1/
 
 ## The critical files (where the ideas live)
 
-- `src/mark1/schema/validate.py` + `schema/bandwidth.py` — the typed-exit guarantee and its
+- `src/keyhole/schema/validate.py` + `schema/bandwidth.py` — the typed-exit guarantee and its
   bandwidth accounting. **The novel core.**
-- `src/mark1/controlplane/gate.py` — the exit gate that ties validation, bandwidth, backstop, and
+- `src/keyhole/controlplane/gate.py` — the exit gate that ties validation, bandwidth, backstop, and
   attestation together.
-- `src/mark1/attest/sign.py` + `attest/verify.py` — the verifiable-guarantee piece.
-- `src/mark1/controlplane/launcher.py` — where the containment guarantees are encoded into the task
+- `src/keyhole/attest/sign.py` + `attest/verify.py` — the verifiable-guarantee piece.
+- `src/keyhole/controlplane/launcher.py` — where the containment guarantees are encoded into the task
   definition.
 - `images/egress-proxy/` — the physical proof there is no side network exit.
 - `tests/hostile/test_hostile.py` — the marquee: every exfiltration path blocked *and* attested.

@@ -2,20 +2,20 @@
 
 import pytest
 
-from mark1.attest.sign import Ed25519Signer
-from mark1.attest.verify import verify_attestation
-from mark1.common.hashing import sha256_of_mapping
-from mark1.controlplane.cleanroom import (
+from keyhole.attest.sign import Ed25519Signer
+from keyhole.attest.verify import verify_attestation
+from keyhole.common.hashing import sha256_of_mapping
+from keyhole.controlplane.cleanroom import (
     DatasetStore,
     Refusal,
     authorize,
     run_in_cleanroom,
 )
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 _FILES = {"customers.csv": "a,spam\nb,ham\n"}
 _SCHEMA = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham"])
-_CLASSIFY = 'import os,json;json.dump("spam",open(os.environ["MARK1_OUTPUT"],"w"))'
+_CLASSIFY = 'import os,json;json.dump("spam",open(os.environ["KEYHOLE_OUTPUT"],"w"))'
 
 
 @pytest.fixture

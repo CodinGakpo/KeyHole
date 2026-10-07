@@ -4,8 +4,8 @@ Runs the two-container harness (sandbox-posture probe on an internal-only networ
 sidecar bridging to the internet) and asserts the probe proves containment: direct egress blocked,
 proxy denies unlisted hosts, proxy permits only the allowlisted one.
 
-Gated behind MARK1_DOCKER=1 (and needs Docker + internet), so it stays out of the default/offline
-CI run. Enable with:  MARK1_DOCKER=1 python -m pytest tests/integration -q
+Gated behind KEYHOLE_DOCKER=1 (and needs Docker + internet), so it stays out of the default/offline
+CI run. Enable with:  KEYHOLE_DOCKER=1 python -m pytest tests/integration -q
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ import pytest
 _COMPOSE = Path(__file__).resolve().parents[2] / "harness" / "egress" / "docker-compose.yml"
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("MARK1_DOCKER") or shutil.which("docker") is None,
-    reason="requires Docker + internet; set MARK1_DOCKER=1 to run",
+    not os.environ.get("KEYHOLE_DOCKER") or shutil.which("docker") is None,
+    reason="requires Docker + internet; set KEYHOLE_DOCKER=1 to run",
 )
 
 

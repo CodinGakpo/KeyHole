@@ -90,7 +90,7 @@ guarantee — encrypt-before-emit defeats any content scan (this is the confinem
 
 ## Where it landed
 
-Mark-1 = **confidential code execution with a bandwidth-bounded, attested exit.** Categorically
+Keyhole = **confidential code execution with a bandwidth-bounded, attested exit.** Categorically
 distinct from isolation-first sandboxes (free-form output) and from confidential-computing enclaves
 like Nitro (which protect *trusted* workloads from the host, not *untrusted* code from leaking).
 The full chronological log is [Appendix A](appendix-a-decision-log.md).

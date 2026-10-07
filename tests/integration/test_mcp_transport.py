@@ -1,6 +1,6 @@
 """M7: the confidentiality guarantee holds *through the MCP wire*, not just in-process.
 
-Spawns the real ``mark1-mcp`` server (``python -m mark1.mcp.server``) over stdio and drives it
+Spawns the real ``keyhole-mcp`` server (``python -m keyhole.mcp.server``) over stdio and drives it
 with the MCP client: list the tool, run an honest classifier (released + attested), run an
 exfiltrator (withheld, nothing released).
 
@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-mcp = pytest.importorskip("mcp", reason="requires the 'mcp' extra: pip install 'mark1[mcp]'")
+mcp = pytest.importorskip("mcp", reason="requires the 'mcp' extra: pip install 'keyhole[mcp]'")
 
 from mcp import ClientSession, StdioServerParameters  # noqa: E402
 from mcp.client.stdio import stdio_client  # noqa: E402
@@ -25,12 +25,12 @@ from mcp.client.stdio import stdio_client  # noqa: E402
 _HONEST = """
 import os, json
 rows = open("customers.csv").read().splitlines()
-json.dump("spam" if len(rows) > 1 else "ham", open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump("spam" if len(rows) > 1 else "ham", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 _EXFIL = """
 import os, json
-json.dump(open("customers.csv").read(), open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(open("customers.csv").read(), open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 _SCHEMA = {"type": "enum", "choices": ["spam", "ham", "other"]}
@@ -40,8 +40,8 @@ _DATA = {"customers.csv": "a,spam\nb,ham\n"}
 def _server_params(tmp_path) -> StdioServerParameters:
     return StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mark1.mcp.server"],
-        env={"PATH": os.environ.get("PATH", ""), "MARK1_HOME": str(tmp_path)},
+        args=["-m", "keyhole.mcp.server"],
+        env={"PATH": os.environ.get("PATH", ""), "KEYHOLE_HOME": str(tmp_path)},
     )
 
 

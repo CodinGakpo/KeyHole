@@ -1,4 +1,4 @@
-# Mark-1 — Future Scope
+# Keyhole — Future Scope
 
 The living list of features to build **after** the base (M0–M8). Grouped by theme. Nothing here is
 required for the marquee MVP; everything here is a real direction the project can grow into. Each

@@ -1,18 +1,18 @@
 """Dashboard service + page: summaries, detail, upload-verify, and a self-contained page."""
 
-from mark1.attest.sign import Ed25519Signer
-from mark1.common.models import DataFlowEvent, DataFlowEventKind
-from mark1.controlplane.gate import run_exit_gate
-from mark1.controlplane.store import InMemoryStore
-from mark1.dashboard import service
-from mark1.dashboard.server import render_index
-from mark1.executor.entrypoint import ExecResult
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.sign import Ed25519Signer
+from keyhole.common.models import DataFlowEvent, DataFlowEventKind
+from keyhole.controlplane.gate import run_exit_gate
+from keyhole.controlplane.store import InMemoryStore
+from keyhole.dashboard import service
+from keyhole.dashboard.server import render_index
+from keyhole.executor.entrypoint import ExecResult
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 
 def _seed_run(store, signer, output='"spam"', run_id="run-1"):
     """Run a value through the real exit gate and persist the outcome, like the CLI does."""
-    from mark1.common.models import Limits, RunRequest
+    from keyhole.common.models import Limits, RunRequest
     req = RunRequest(code="x", data={}, output_schema=OutputSchema(type=SchemaType.ENUM,
                      choices=["spam", "ham"]), limits=Limits())
     ex = ExecResult(0, output, "", "", 5, False, len(output), [
@@ -72,7 +72,7 @@ def test_verify_upload_rejects_non_attestation():
 
 def test_index_is_self_contained():
     html = render_index()
-    assert "<title>Mark-1" in html
+    assert "<title>Keyhole" in html
     assert "/api/runs" in html and "/api/verify" in html
     # No external requests: nothing loaded over the network (CSP-clean, offline-safe).
     assert "http://" not in html and "https://" not in html

@@ -38,8 +38,8 @@ The paths not taken, preserved because they show the shape of the decision space
 
 ## Related industry approaches (for context)
 
-| Approach | Relationship to Mark-1 |
+| Approach | Relationship to Keyhole |
 |---|---|
 | **E2B / Modal / Daytona / AWS AgentCore** | Isolation-first, free-form output. Different question (protect host from code). |
-| **AWS Nitro Enclaves / confidential computing** | Protect a *trusted* workload's data from the host. Mark-1 protects a data owner from *untrusted* code. Nitro is a roadmap backend to strengthen attestation. |
-| **AWS Clean Rooms / data clean rooms** | Multi-party privacy-preserving analytics. The multi-party clean-room is a roadmap direction for Mark-1. |
+| **AWS Nitro Enclaves / confidential computing** | Protect a *trusted* workload's data from the host. Keyhole protects a data owner from *untrusted* code. Nitro is a roadmap backend to strengthen attestation. |
+| **AWS Clean Rooms / data clean rooms** | Multi-party privacy-preserving analytics. The multi-party clean-room is a roadmap direction for Keyhole. |

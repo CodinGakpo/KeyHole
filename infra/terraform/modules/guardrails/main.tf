@@ -1,12 +1,12 @@
 # Guardrails: a monthly AWS Budgets alarm so cost never surprises you. The budget is a hard
-# backstop; the application-level quotas (see mark1.controlplane.quotas) are the first line.
+# backstop; the application-level quotas (see keyhole.controlplane.quotas) are the first line.
 # One budget per account is free. Given the expected steady state (~$1/mo for the KMS key plus
 # pennies of Fargate), a $5 limit warns well below the ~$10 concern line and catches anything
 # unexpected (a stray NAT gateway, a stuck task) early.
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 
 variable "monthly_budget_usd" {

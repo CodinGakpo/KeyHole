@@ -1,7 +1,7 @@
 """Quota policy: budget/concurrency guardrails."""
 
-from mark1.common.models import Limits
-from mark1.controlplane.quotas import QuotaPolicy, check_quota
+from keyhole.common.models import Limits
+from keyhole.controlplane.quotas import QuotaPolicy, check_quota
 
 
 def test_allows_within_policy():

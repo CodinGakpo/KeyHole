@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "mark1"
+name = "keyhole"
 version = "0.1.0"
 description = "Confidential code execution with a bandwidth-bounded, attested exit"
 readme = "README.md"
@@ -20,11 +20,11 @@ mcp = ["mcp>=1.0,<2"]
 dev = ["pytest>=8", "ruff==0.16.10", "mypy>=1.8"]
 
 [project.scripts]
-sbx = "mark1.cli.main:main"
-mark1-mcp = "mark1.mcp.server:main"
+sbx = "keyhole.cli.main:main"
+keyhole-mcp = "keyhole.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mark1"]
+packages = ["src/keyhole"]
 
 [tool.ruff]
 line-length = 100

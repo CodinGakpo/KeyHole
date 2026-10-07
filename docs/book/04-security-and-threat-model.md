@@ -1,12 +1,12 @@
 # Chapter 4 — Security & Threat Model: the honest scope
 
 A security product is only as good as the precision of its claims. This chapter states exactly what
-Mark-1 guarantees, what it bounds, and what it explicitly does not cover. This is the content that
+Keyhole guarantees, what it bounds, and what it explicitly does not cover. This is the content that
 belongs in the shipped `SECURITY.md`.
 
 ## The two structural guarantees
 
-Mark-1 rests on two independent guarantees, both **structural** (properties of the architecture,
+Keyhole rests on two independent guarantees, both **structural** (properties of the architecture,
 not behaviors of a scanner):
 
 ### 1. No side exits (containment)
@@ -58,7 +58,7 @@ released. A run whose output doesn't conform releases *nothing*. The exit's info
 
 The per-run bound says nothing about *repetition*. An adversary who can call the box N times, each
 run individually within schema, could drip out N × bandwidth bits over time — the per-run guarantee
-is silent on the total. Mark-1 closes this with a **per-principal cumulative exit-bandwidth budget**
+is silent on the total. Keyhole closes this with a **per-principal cumulative exit-bandwidth budget**
 (`controlplane/budget.py`): a ledger records the bits released to each caller and, optionally, only
 within a rolling window (e.g. per day). At the exit gate, a conforming output is **withheld** once
 releasing it would push the caller's total past the cap. Only *released* runs spend budget — a
@@ -84,8 +84,8 @@ past the gate under the guise of "just a few items."
 - **Inference leakage.** A legitimate small answer may itself reveal something about the data (e.g.
   "is record #5 fraudulent? → yes"). Bounding the channel doesn't make a truthful answer private;
   that's the caller's modeling problem, not the sandbox's.
-- **Breaking AWS's own isolation.** Mark-1 relies on Fargate task isolation as its Layer-1
-  substrate. If that is breached, that's outside Mark-1's threat model (and AWS's responsibility).
+- **Breaking AWS's own isolation.** Keyhole relies on Fargate task isolation as its Layer-1
+  substrate. If that is breached, that's outside Keyhole's threat model (and AWS's responsibility).
 
 ## The trust boundary of the attestation
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from mark1.schema.spec import OutputSchema, SchemaType
-from mark1.schema.validate import validate_output
+from keyhole.schema.spec import OutputSchema, SchemaType
+from keyhole.schema.validate import validate_output
 
 
 def _schema(**kw) -> OutputSchema:

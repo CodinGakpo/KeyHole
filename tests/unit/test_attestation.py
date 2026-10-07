@@ -1,8 +1,8 @@
 """Attestation: sign/verify round-trip and tamper detection."""
 
-from mark1.attest.record import Attestation
-from mark1.attest.sign import Ed25519Signer, sign_attestation
-from mark1.attest.verify import verify_attestation
+from keyhole.attest.record import Attestation
+from keyhole.attest.sign import Ed25519Signer, sign_attestation
+from keyhole.attest.verify import verify_attestation
 
 
 def _attestation(**overrides) -> Attestation:

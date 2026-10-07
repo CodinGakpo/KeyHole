@@ -14,12 +14,12 @@ from __future__ import annotations
 import os
 import sys
 
-from mark1.attest.keys import load_or_create_dev_signer
-from mark1.attest.verify import verify_attestation
-from mark1.common.config import dev_pubkey_path
-from mark1.common.models import Limits, RunRequest
-from mark1.controlplane.cloud_runner import CloudConfig, run_cloud
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.keys import load_or_create_dev_signer
+from keyhole.attest.verify import verify_attestation
+from keyhole.common.config import dev_pubkey_path
+from keyhole.common.models import Limits, RunRequest
+from keyhole.controlplane.cloud_runner import CloudConfig, run_cloud
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 DATASET = "\n".join(f"user{i},{i}@corp.example,ssn=123-45-{i:04d}" for i in range(300))
 SCHEMA = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
@@ -28,12 +28,12 @@ HONEST = """
 import os, json
 rows = open("customers.csv").read().splitlines()
 label = "spam" if len(rows) > 100 else "ham"
-json.dump(label, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(label, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 MALICIOUS = """
 import os, json
-json.dump(open("customers.csv").read(), open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(open("customers.csv").read(), open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 # Attempts real internet egress from inside the box; reports honestly whether it got out.
@@ -45,7 +45,7 @@ try:
     reached = True
 except OSError:
     reached = False
-json.dump(reached, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(reached, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 BOOL_SCHEMA = OutputSchema(type=SchemaType.BOOLEAN)
@@ -54,18 +54,18 @@ BOOL_SCHEMA = OutputSchema(type=SchemaType.BOOLEAN)
 def _config() -> CloudConfig:
     missing = [
         k
-        for k in ("MARK1_REGION", "MARK1_CLUSTER", "MARK1_TASK_DEF", "MARK1_SUBNET", "MARK1_SG", "MARK1_BUCKET")
+        for k in ("KEYHOLE_REGION", "KEYHOLE_CLUSTER", "KEYHOLE_TASK_DEF", "KEYHOLE_SUBNET", "KEYHOLE_SG", "KEYHOLE_BUCKET")
         if not os.environ.get(k)
     ]
     if missing:
         sys.exit(f"missing env: {', '.join(missing)} (populate from `terraform output`)")
     return CloudConfig(
-        region=os.environ["MARK1_REGION"],
-        cluster=os.environ["MARK1_CLUSTER"],
-        task_definition=os.environ["MARK1_TASK_DEF"],
-        subnet_id=os.environ["MARK1_SUBNET"],
-        security_group_id=os.environ["MARK1_SG"],
-        bucket=os.environ["MARK1_BUCKET"],
+        region=os.environ["KEYHOLE_REGION"],
+        cluster=os.environ["KEYHOLE_CLUSTER"],
+        task_definition=os.environ["KEYHOLE_TASK_DEF"],
+        subnet_id=os.environ["KEYHOLE_SUBNET"],
+        security_group_id=os.environ["KEYHOLE_SG"],
+        bucket=os.environ["KEYHOLE_BUCKET"],
     )
 
 

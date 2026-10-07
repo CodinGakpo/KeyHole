@@ -2,7 +2,7 @@
 
 ## The shape of the system
 
-Mark-1 has four moving parts:
+Keyhole has four moving parts:
 
 1. **Clients** — a CLI (`sbx`) and an MCP server (`run_confidential`), both thin wrappers over the
    same REST API.

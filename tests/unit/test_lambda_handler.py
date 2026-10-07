@@ -6,15 +6,15 @@ are monkeypatched), so the routing + persistence logic is tested without AWS.
 
 import pytest
 
-from mark1.attest.sign import Ed25519Signer
-from mark1.common.models import Limits, RunRequest, RunStatus
-from mark1.controlplane import app as app_mod
-from mark1.controlplane.app import get_run, submit_run
-from mark1.controlplane.cloud_runner import CloudConfig, SubmitResult
-from mark1.controlplane.gate import run_exit_gate
-from mark1.controlplane.store import InMemoryStore
-from mark1.executor.entrypoint import ExecResult
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.sign import Ed25519Signer
+from keyhole.common.models import Limits, RunRequest, RunStatus
+from keyhole.controlplane import app as app_mod
+from keyhole.controlplane.app import get_run, submit_run
+from keyhole.controlplane.cloud_runner import CloudConfig, SubmitResult
+from keyhole.controlplane.gate import run_exit_gate
+from keyhole.controlplane.store import InMemoryStore
+from keyhole.executor.entrypoint import ExecResult
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 _CONFIG = CloudConfig(
     region="us-east-1", cluster="c", task_definition="td",

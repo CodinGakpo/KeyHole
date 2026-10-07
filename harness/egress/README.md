@@ -33,7 +33,7 @@ docker compose -f harness/egress/docker-compose.yml up --build \
 # expect: CONTAINMENT: PROVEN  (probe exits 0)
 
 # or via pytest:
-MARK1_DOCKER=1 python -m pytest tests/integration -q
+KEYHOLE_DOCKER=1 python -m pytest tests/integration -q
 ```
 
 The proxy prints one structured JSON line per attempt (allowed or denied) — this is the network

@@ -13,7 +13,7 @@ A short map; the narrative version is [`docs/book/05-architecture.md`](docs/book
   containment is enforced by the **network** — private subnet, no NAT, endpoints-only run security
   group — not by an in-task sidecar (Fargate `awsvpc` containers share one network namespace, so a
   sidecar cannot intercept its neighbours; see book ch. 4).
-- **State & storage** — DynamoDB (`mark1_runs`, append-only `mark1_audit`), S3 (code/data/schema/
+- **State & storage** — DynamoDB (`keyhole_runs`, append-only `keyhole_audit`), S3 (code/data/schema/
   output/attestation, SSE-KMS), ECR (images), KMS (encryption + attestation signing).
 
 ## A run

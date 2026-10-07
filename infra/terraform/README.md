@@ -1,4 +1,4 @@
-# Mark-1 Infrastructure (Terraform)
+# Keyhole Infrastructure (Terraform)
 
 One `terraform apply` stands up the whole confidential-execution platform in your own AWS account.
 
@@ -13,7 +13,7 @@ One `terraform apply` stands up the whole confidential-execution platform in you
 | Module | What it provisions |
 |---|---|
 | `network`    | VPC, private subnet (no NAT), deny-all security group, S3 gateway endpoint, optional ECR/Logs interface endpoints. |
-| `state`      | DynamoDB `mark1_runs` + append-only `mark1_audit`; S3 bucket (SSE-KMS, block-public, lifecycle expiry). |
+| `state`      | DynamoDB `keyhole_runs` + append-only `keyhole_audit`; S3 bucket (SSE-KMS, block-public, lifecycle expiry). |
 | `registry`   | ECR repos for the sandbox and egress-proxy images (scan-on-push). |
 | `execution`  | ECS cluster, sandbox task definition (empty task role), the three IAM roles. |
 | `controlplane` | Lambda + API Gateway HTTP API + its scoped role. |

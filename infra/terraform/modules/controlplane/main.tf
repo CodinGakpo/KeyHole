@@ -5,7 +5,7 @@
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 variable "region" { type = string }
 variable "lambda_zip_path" { type = string }
@@ -54,7 +54,7 @@ resource "aws_lambda_function" "api" {
   function_name    = "${var.name_prefix}-api"
   role             = aws_iam_role.lambda.arn
   runtime          = "python3.12"
-  handler          = "mark1.controlplane.app.lambda_handler"
+  handler          = "keyhole.controlplane.app.lambda_handler"
   filename         = var.lambda_zip_path
   source_code_hash = filebase64sha256(var.lambda_zip_path)
   timeout          = 30
@@ -62,14 +62,14 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      MARK1_CLUSTER     = var.cluster_name
-      MARK1_TASK_DEF    = var.task_definition_arn
-      MARK1_SUBNET      = var.subnet_id
-      MARK1_SG          = var.security_group_id
-      MARK1_BUCKET      = var.bucket
-      MARK1_RUNS_TABLE  = var.runs_table
-      MARK1_AUDIT_TABLE = var.audit_table
-      MARK1_KMS_KEY_ID  = var.kms_key_arn
+      KEYHOLE_CLUSTER     = var.cluster_name
+      KEYHOLE_TASK_DEF    = var.task_definition_arn
+      KEYHOLE_SUBNET      = var.subnet_id
+      KEYHOLE_SG          = var.security_group_id
+      KEYHOLE_BUCKET      = var.bucket
+      KEYHOLE_RUNS_TABLE  = var.runs_table
+      KEYHOLE_AUDIT_TABLE = var.audit_table
+      KEYHOLE_KMS_KEY_ID  = var.kms_key_arn
     }
   }
 }

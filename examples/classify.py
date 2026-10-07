@@ -10,4 +10,4 @@ rows = open("customers.csv").read().splitlines()[1:]  # drop header
 high_value = sum(1 for r in rows if float(r.split(",")[3]) > 10_000)
 
 label = "spam" if high_value >= 2 else "ham"
-json.dump(label, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(label, open(os.environ["KEYHOLE_OUTPUT"], "w"))

@@ -6,16 +6,17 @@ dataset can leak no more than the schema allows, and can only run at all with a 
 
 import pytest
 
-from mark1.attest.sign import Ed25519Signer
-from mark1.attest.verify import verify_attestation
-from mark1.common.models import RunStatus
-from mark1.controlplane.cleanroom import DatasetStore, Refusal, run_in_cleanroom
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.sign import Ed25519Signer
+from keyhole.attest.verify import verify_attestation
+from keyhole.common.models import RunStatus
+from keyhole.controlplane.cleanroom import DatasetStore, Refusal, run_in_cleanroom
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 # A stand-in sensitive dataset the provider may compute on but must not exfiltrate.
 SECRET = "\n".join(f"user{i},{i}@corp.example,ssn=123-45-{i:04d}" for i in range(200))
 FILES = {"customers.csv": SECRET}
 ENUM = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
+HONEST = 'import os,json;json.dump("spam",open(os.environ["KEYHOLE_OUTPUT"],"w"))'
 
 
 @pytest.fixture
@@ -34,7 +35,7 @@ def test_ungranted_provider_cannot_run(tmp_path, signer):
     store, ds, grant = _fixture(tmp_path)
     # A provider with no matching grant is refused; nothing runs, nothing is released.
     out = run_in_cleanroom(store, ds.dataset_id, grant.grant_id, "rival-corp",
-                           'import os,json;json.dump("spam",open(os.environ["MARK1_OUTPUT"],"w"))',
+                           HONEST,
                            ENUM, signer)
     assert isinstance(out, Refusal)
 
@@ -43,7 +44,7 @@ def test_granted_provider_cannot_exfiltrate_the_owners_data(tmp_path, signer):
     store, ds, grant = _fixture(tmp_path)
     # Authorized to run, but tries to dump the whole dataset — the exit gate withholds it.
     exfil = ('import os,json\n'
-             'json.dump(open("customers.csv").read(), open(os.environ["MARK1_OUTPUT"],"w"))')
+             'json.dump(open("customers.csv").read(), open(os.environ["KEYHOLE_OUTPUT"],"w"))')
     out = run_in_cleanroom(store, ds.dataset_id, grant.grant_id, "partner-ai", exfil, ENUM, signer)
     assert not isinstance(out, Refusal)
     assert out.result.status is RunStatus.WITHHELD
@@ -56,7 +57,7 @@ def test_granted_provider_cannot_exfiltrate_the_owners_data(tmp_path, signer):
 def test_tampering_identities_breaks_the_signature(tmp_path, signer):
     store, ds, grant = _fixture(tmp_path)
     out = run_in_cleanroom(store, ds.dataset_id, grant.grant_id, "partner-ai",
-                           'import os,json;json.dump("spam",open(os.environ["MARK1_OUTPUT"],"w"))',
+                           HONEST,
                            ENUM, signer)
     att = out.attestation
     assert verify_attestation(att, signer.public_key_pem())

@@ -2,7 +2,7 @@
 
 ## The principle
 
-A security claim you haven't tried to break is a hope, not a guarantee. Mark-1's marquee
+A security claim you haven't tried to break is a hope, not a guarantee. Keyhole's marquee
 verification is a suite of **hostile scripts** — code that actively tries to steal the supplied
 data by every avenue — with assertions that each attempt is **structurally blocked or bounded**
 *and* faithfully recorded in the attestation/audit. A green run of this suite is the product's
@@ -37,7 +37,7 @@ Fargate. Each asserts a control holds **and** that the data-flow record captured
 
 ## What "green" demonstrates
 
-A passing suite shows all three of Mark-1's claims at once:
+A passing suite shows all three of Keyhole's claims at once:
 
 1. **Typed answers are released and attested** — the product does useful work.
 2. **Bulk exfiltration is structurally impossible** — the core guarantee holds against active

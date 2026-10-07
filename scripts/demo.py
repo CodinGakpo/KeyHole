@@ -1,4 +1,4 @@
-"""End-to-end local demo of the Mark-1 confidentiality guarantee.
+"""End-to-end local demo of the Keyhole confidentiality guarantee.
 
 Runs two programs against the same private dataset under the same 3-way classification schema:
   1. an honest classifier  -> a bounded, attested answer is released
@@ -9,12 +9,12 @@ No AWS required. Run with ``make demo`` or ``python scripts/demo.py``.
 
 from __future__ import annotations
 
-from mark1.attest.keys import load_or_create_dev_signer
-from mark1.attest.verify import verify_attestation
-from mark1.common.config import dev_pubkey_path
-from mark1.common.models import Limits, RunRequest
-from mark1.controlplane.runner import run_local
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.keys import load_or_create_dev_signer
+from keyhole.attest.verify import verify_attestation
+from keyhole.common.config import dev_pubkey_path
+from keyhole.common.models import Limits, RunRequest
+from keyhole.controlplane.runner import run_local
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 DATASET = "\n".join(f"user{i},{i}@corp.example,ssn=123-45-{i:04d}" for i in range(500))
 SCHEMA = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
@@ -23,12 +23,12 @@ HONEST = """
 import os, json
 rows = open("customers.csv").read().splitlines()
 label = "spam" if len(rows) > 100 else "ham"
-json.dump(label, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(label, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 MALICIOUS = """
 import os, json
-json.dump(open("customers.csv").read(), open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(open("customers.csv").read(), open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
 
 
@@ -53,7 +53,7 @@ def _run(name: str, code: str) -> None:
 
 
 def main() -> int:
-    print("Mark-1 local demo — same dataset, same schema, two programs")
+    print("Keyhole local demo — same dataset, same schema, two programs")
     print(f"dataset: {len(DATASET)} bytes; exit schema: 3-way enum (~1.58 bits)")
     _run("honest classifier", HONEST)
     _run("malicious exfiltrator", MALICIOUS)

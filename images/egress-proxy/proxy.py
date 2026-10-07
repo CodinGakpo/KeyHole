@@ -1,7 +1,7 @@
 """A tiny deny-by-default HTTP CONNECT proxy that logs every attempt.
 
 This is the sandbox's only intended network path. It permits CONNECT only to hosts on the
-allowlist (``MARK1_ALLOWED_HOSTS``); everything else is denied with 403. Allowlisted targets are
+allowlist (``KEYHOLE_ALLOWED_HOSTS``); everything else is denied with 403. Allowlisted targets are
 tunnelled for real (bidirectional splice). Every attempt — allowed or denied — is logged as a
 structured JSON line so the control plane can fold it into the run's data-flow record and
 attestation.
@@ -122,8 +122,8 @@ def handle(client: socket.socket, allowed: set[str]) -> None:
 
 
 def main() -> int:
-    allowed = load_allowlist(os.environ.get("MARK1_ALLOWED_HOSTS", ""))
-    port = int(os.environ.get("MARK1_PROXY_PORT", str(DEFAULT_PORT)))
+    allowed = load_allowlist(os.environ.get("KEYHOLE_ALLOWED_HOSTS", ""))
+    port = int(os.environ.get("KEYHOLE_PROXY_PORT", str(DEFAULT_PORT)))
 
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

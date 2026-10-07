@@ -1,6 +1,6 @@
 # Security Model & Threat Model
 
-Mark-1's claims are deliberately **bounded and honest**. This document states exactly what is
+Keyhole's claims are deliberately **bounded and honest**. This document states exactly what is
 guaranteed, what is bounded, and what is out of scope. The full reasoning is in
 [`docs/book/04-security-and-threat-model.md`](docs/book/04-security-and-threat-model.md).
 
@@ -40,7 +40,7 @@ guaranteed, what is bounded, and what is out of scope. The full reasoning is in
 - **Covert timing / resource side channels.** Mitigations (fixed-duration runs) are on the roadmap.
 - **Inference leakage.** A legitimate small answer may itself reveal something about the data; that
   is the caller's modeling concern.
-- **Breaking AWS's own task isolation.** Mark-1 relies on Fargate isolation as its substrate.
+- **Breaking AWS's own task isolation.** Keyhole relies on Fargate isolation as its substrate.
 
 ## Attestation trust root
 

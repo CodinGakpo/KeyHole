@@ -3,7 +3,7 @@
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 
 locals {

@@ -6,9 +6,9 @@ plane, so the container itself needs no AWS credentials. It can reach only our b
 gateway endpoint policy enforces that), and only these two keys in practice.
 
 Contract:
-  * MARK1_INPUT_URL   - presigned GET for a JSON bundle {code, data:{name:contents}, timeout}.
-  * MARK1_OUTPUT_URL  - presigned PUT; we upload a JSON envelope describing the run's raw result.
-  * The user program writes its single result to $MARK1_OUTPUT (a file). That file's contents are
+  * KEYHOLE_INPUT_URL   - presigned GET for a JSON bundle {code, data:{name:contents}, timeout}.
+  * KEYHOLE_OUTPUT_URL  - presigned PUT; we upload a JSON envelope describing the run's raw result.
+  * The user program writes its single result to $KEYHOLE_OUTPUT (a file). That file's contents are
     the only exit the caller ever receives (after the control-plane exit gate validates them).
 """
 
@@ -23,7 +23,7 @@ import urllib.request
 from pathlib import Path
 
 WORK = Path("/sandbox/work")
-OUTPUT_FILE = WORK / "__mark1_output__.json"
+OUTPUT_FILE = WORK / "__keyhole_output__.json"
 _TAIL = 4096  # cap stdout/stderr we echo back to logs
 
 
@@ -40,20 +40,20 @@ def _put(url: str, body: bytes) -> None:
 
 
 def main() -> int:
-    input_url = os.environ["MARK1_INPUT_URL"]
-    output_url = os.environ["MARK1_OUTPUT_URL"]
+    input_url = os.environ["KEYHOLE_INPUT_URL"]
+    output_url = os.environ["KEYHOLE_OUTPUT_URL"]
 
     bundle = json.loads(_get(input_url))
     WORK.mkdir(parents=True, exist_ok=True)
 
     for name, contents in bundle.get("data", {}).items():
         (WORK / Path(name).name).write_text(contents)
-    code_path = WORK / "__mark1_code__.py"
+    code_path = WORK / "__keyhole_code__.py"
     code_path.write_text(bundle["code"])
     timeout = int(bundle.get("timeout", 60))
 
     env = {
-        "MARK1_OUTPUT": str(OUTPUT_FILE),
+        "KEYHOLE_OUTPUT": str(OUTPUT_FILE),
         "PATH": "/usr/bin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
@@ -97,7 +97,7 @@ def main() -> int:
         "stderr_tail": stderr[-_TAIL:],
     }
     _put(output_url, json.dumps(envelope).encode("utf-8"))
-    print(f"mark1: run complete, exit={exit_code}, output_bytes={output_bytes}", flush=True)
+    print(f"keyhole: run complete, exit={exit_code}, output_bytes={output_bytes}", flush=True)
     return 0
 
 

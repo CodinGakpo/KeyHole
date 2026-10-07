@@ -18,10 +18,10 @@ import socket
 import sys
 import time
 
-PROXY_HOST = os.environ.get("MARK1_PROXY_HOST", "proxy")
-PROXY_PORT = int(os.environ.get("MARK1_PROXY_PORT", "8080"))
+PROXY_HOST = os.environ.get("KEYHOLE_PROXY_HOST", "proxy")
+PROXY_PORT = int(os.environ.get("KEYHOLE_PROXY_PORT", "8080"))
 
-ALLOWED_IP = "1.1.1.1"  # matches the proxy's MARK1_ALLOWED_HOSTS
+ALLOWED_IP = "1.1.1.1"  # matches the proxy's KEYHOLE_ALLOWED_HOSTS
 DENIED_IP = "9.9.9.9"  # not on the allowlist
 PUBLIC_PORT = 443
 

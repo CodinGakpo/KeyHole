@@ -5,7 +5,7 @@
 
 variable "name_prefix" {
   type    = string
-  default = "mark1"
+  default = "keyhole"
 }
 
 variable "vpc_cidr" {

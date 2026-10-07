@@ -3,7 +3,7 @@
 ## The build order and its logic
 
 The differentiator is built **first**, not last. The typed exit + bandwidth engine (M1) and
-attestation (M2) are the parts that make Mark-1 *Mark-1*; everything before real AWS execution can
+attestation (M2) are the parts that make Keyhole *Keyhole*; everything before real AWS execution can
 be developed and unit-tested against local Docker, which keeps the inner loop fast and the cloud
 bill near zero.
 
@@ -16,7 +16,7 @@ bill near zero.
 | **M4 — Terraform AWS infra** | All modules; `terraform apply` from an empty account succeeds and `destroy` cleans up; KMS key provisioned. No run yet. | Stand up the cloud substrate independently. |
 | **M5 — Fargate execution end-to-end** ✅ | `launcher.py` → `ecs.run_task`; `run_cloud` uploads the input bundle to S3, presigns GET/PUT, launches the task, waits, fetches output, runs the exit gate + ed25519 attestation; task self-destructs. Verified on a real cluster: honest run released + attested, hostile exfil withheld + attested. As-built refinements: read-only-root needs an **init container to chown the scratch volume**; egress is enforced at the **subnet/route/SG layer**, not an in-task sidecar (see ch. 4). | The base happy path, in the cloud. |
 | **M6 — Confidentiality hardening + hostile suite (the marquee)** ✅ | Empty task role, egress containment, metadata env-strip, timeouts, data-flow audit. `tests/hostile/` proves dump / encode-in-bounded-string / stdout / fork-bomb / memory-hog / **drip-exfiltration-across-runs** are all structurally blocked *and* attested. Cloud egress assertion scripted in `cloud_smoke.py` (runs each apply). | This milestone **is** the product. See [Chapter 8](08-verification.md). |
-| **M7 — MCP server** ✅ | `run_confidential` over stdio (`mark1-mcp`), integration-tested **through the MCP wire**: honest run released + attested, exfiltration withheld. `principal` passthrough for budget-aware callers. | Small; reuses the exit gate. The headline demo. |
+| **M7 — MCP server** ✅ | `run_confidential` over stdio (`keyhole-mcp`), integration-tested **through the MCP wire**: honest run released + attested, exfiltration withheld. `principal` passthrough for budget-aware callers. | Small; reuses the exit gate. The headline demo. |
 | **M8 — Polish** ✅ | Truthful README (status, mermaid architecture diagram, `make demo` transcript, MCP setup), ARCHITECTURE.md corrected to as-built, `sbx doctor` checks the mcp/cloud extras + dev key. | Make it legible and installable. |
 | **M9 — Cloud control plane (beyond base)** ✅ | Lambda + API Gateway HTTP API with an **async submit/poll** lifecycle (fits the ~29s gateway timeout despite Fargate cold start), DynamoDB persistence (append-only audit), and **KMS-signed attestations** (ECDSA P-256; private key never leaves KMS). `sbx run` without `--local` drives the API. Verified live end-to-end then destroyed: honest released + KMS-attested, exfil withheld, attestation VALID vs the exported KMS public key (tamper → INVALID). | Makes the "one `terraform apply` → a confidential-execution API in your own account" pitch literally true. |
 

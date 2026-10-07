@@ -11,12 +11,12 @@ import os
 
 import pytest
 
-from mark1.attest.sign import Ed25519Signer
-from mark1.attest.verify import verify_attestation
-from mark1.common.models import Limits, RunRequest, RunStatus, utcnow
-from mark1.controlplane.budget import BudgetPolicy, InMemoryLedger
-from mark1.controlplane.runner import run_local
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.attest.sign import Ed25519Signer
+from keyhole.attest.verify import verify_attestation
+from keyhole.common.models import Limits, RunRequest, RunStatus, utcnow
+from keyhole.controlplane.budget import BudgetPolicy, InMemoryLedger
+from keyhole.controlplane.runner import run_local
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 # A stand-in "sensitive dataset" the untrusted code is allowed to read but must not leak.
 SECRET_DATASET = "\n".join(f"user{i},{i}@corp.example,ssn=123-45-{i:04d}" for i in range(200))
@@ -45,7 +45,7 @@ def test_dump_whole_dataset_to_output_is_rejected(signer):
     code = """
 import os, json
 data = open("customers.csv").read()
-json.dump(data, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(data, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
     outcome = _run(code, schema, signer)
@@ -62,7 +62,7 @@ def test_encode_dataset_in_bounded_string_is_capped(signer):
     code = """
 import os, json
 data = open("customers.csv").read()
-json.dump(data, open(os.environ["MARK1_OUTPUT"], "w"))  # far longer than the bound
+json.dump(data, open(os.environ["KEYHOLE_OUTPUT"], "w"))  # far longer than the bound
 """
     schema = OutputSchema(type=SchemaType.STRING, max_length=8)
     outcome = _run(code, schema, signer)
@@ -78,7 +78,7 @@ def test_bounded_channel_is_disclosed_when_used(signer):
     code = """
 import os, json
 data = open("customers.csv").read()
-json.dump(data[:8], open(os.environ["MARK1_OUTPUT"], "w"))  # fits the bound
+json.dump(data[:8], open(os.environ["KEYHOLE_OUTPUT"], "w"))  # fits the bound
 """
     schema = OutputSchema(type=SchemaType.STRING, max_length=8)
     outcome = _run(code, schema, signer)
@@ -95,7 +95,7 @@ json.dump(data[:8], open(os.environ["MARK1_OUTPUT"], "w"))  # fits the bound
 def test_secret_printed_to_output_is_caught_by_backstop(signer):
     code = """
 import os, json
-json.dump("AKIAIOSFODNN7EXAMPLE", open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump("AKIAIOSFODNN7EXAMPLE", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.STRING, max_length=64)
     outcome = _run(code, schema, signer)
@@ -108,7 +108,7 @@ def test_stdout_is_not_an_exit_channel(signer):
     code = """
 import os, json
 print(open("customers.csv").read())          # goes nowhere the caller receives
-json.dump("ham", open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump("ham", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham", "other"])
     outcome = _run(code, schema, signer)
@@ -140,7 +140,7 @@ try:
         blob.extend(b"x" * (10 * 1024 * 1024))
 except MemoryError:
     pass
-json.dump(True, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(True, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.BOOLEAN)
     outcome = _run(code, schema, signer, timeout_seconds=5, memory_mb=128)
@@ -155,7 +155,7 @@ def test_drip_exfiltration_over_runs_is_bounded_by_the_budget(signer):
     code = """
 import os, json
 data = open("customers.csv").read()
-json.dump(len(data) % 2 == 0, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(len(data) % 2 == 0, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.BOOLEAN)  # 1 bit per run
     ledger = InMemoryLedger()
@@ -177,11 +177,11 @@ def test_withheld_run_does_not_consume_budget(signer):
     # A non-conforming (withheld) run leaks nothing, so it must not spend any budget.
     good = """
 import os, json
-json.dump(True, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(True, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     bad = """
 import os, json
-json.dump("not-a-boolean", open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump("not-a-boolean", open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.BOOLEAN)
     ledger = InMemoryLedger()
@@ -196,7 +196,7 @@ json.dump("not-a-boolean", open(os.environ["MARK1_OUTPUT"], "w"))
 
 
 @pytest.mark.skipif(
-    not os.environ.get("MARK1_CLOUD"),
+    not os.environ.get("KEYHOLE_CLOUD"),
     reason=(
         "network-egress containment is enforced by the egress proxy; asserted in the cloud suite"
     ),
@@ -209,7 +209,7 @@ try:
     leaked = True
 except OSError:
     leaked = False
-json.dump(leaked, open(os.environ["MARK1_OUTPUT"], "w"))
+json.dump(leaked, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 """
     schema = OutputSchema(type=SchemaType.BOOLEAN)
     outcome = _run(code, schema, signer)

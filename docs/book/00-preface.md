@@ -1,8 +1,8 @@
 # Chapter 0 — Preface: How to read this book
 
-## What Mark-1 is
+## What Keyhole is
 
-Mark-1 is a **confidential code-execution sandbox**. You give it untrusted or AI-generated Python
+Keyhole is a **confidential code-execution sandbox**. You give it untrusted or AI-generated Python
 plus some private data, it runs the code in an isolated, zero-egress AWS environment, and it hands
 back **only a small, typed, cryptographically-attested answer**. The design goal is that your data
 *structurally cannot leave* — not because a scanner caught it on the way out, but because there is
@@ -36,7 +36,7 @@ code. This book records that reasoning so that:
 
 ## A note on intellectual honesty
 
-Mark-1's security claim is deliberately *bounded*. It is built on a 1970s theoretical result (the
+Keyhole's security claim is deliberately *bounded*. It is built on a 1970s theoretical result (the
 confinement problem) that says the strong version of what it does is impossible. Rather than hide
 that, the design leans into it: it promises exactly what provably holds and names what it cannot
 do. Chapter 3 and Chapter 4 make this precise. If you take one thing from this book, take that the

@@ -15,8 +15,8 @@ services:
     build: ../../images/egress-proxy
     networks: [edge, internal]
     environment:
-      MARK1_ALLOWED_HOSTS: "1.1.1.1"
-      MARK1_PROXY_PORT: "8080"
+      KEYHOLE_ALLOWED_HOSTS: "1.1.1.1"
+      KEYHOLE_PROXY_PORT: "8080"
 
   probe:
     build:
@@ -25,8 +25,8 @@ services:
     depends_on: [proxy]
     networks: [internal] # internal ONLY -> no direct internet
     environment:
-      MARK1_PROXY_HOST: "proxy"
-      MARK1_PROXY_PORT: "8080"
+      KEYHOLE_PROXY_HOST: "proxy"
+      KEYHOLE_PROXY_PORT: "8080"
 
 networks:
   edge: {}

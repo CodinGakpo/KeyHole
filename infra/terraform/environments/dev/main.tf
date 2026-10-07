@@ -52,9 +52,9 @@ variable "enable_egress_endpoints" {
 
 # Customer KMS key for attestation SIGNING only (the private key never leaves KMS). ~$1/mo, so
 # only when the control plane is on. The bucket uses free SSE-S3, so KMS is not needed for encryption.
-resource "aws_kms_key" "mark1" {
+resource "aws_kms_key" "keyhole" {
   count                    = var.enable_control_plane ? 1 : 0
-  description              = "mark1 attestation signing (ECDSA P-256)"
+  description              = "keyhole attestation signing (ECDSA P-256)"
   deletion_window_in_days  = 7
   key_usage                = "SIGN_VERIFY"
   customer_master_key_spec = "ECC_NIST_P256"
@@ -98,7 +98,7 @@ module "controlplane" {
   execution_role_arn  = module.execution.execution_role_arn
   subnet_id           = module.network.private_subnet_id
   security_group_id   = module.network.run_security_group_id
-  kms_key_arn         = aws_kms_key.mark1[0].arn
+  kms_key_arn         = aws_kms_key.keyhole[0].arn
 }
 
 module "guardrails" {
@@ -109,7 +109,7 @@ module "guardrails" {
 }
 
 output "api_endpoint" { value = try(module.controlplane[0].api_endpoint, null) }
-output "kms_key_id" { value = try(aws_kms_key.mark1[0].key_id, null) }
+output "kms_key_id" { value = try(aws_kms_key.keyhole[0].key_id, null) }
 output "sandbox_repo_url" { value = module.registry.sandbox_repo_url }
 output "proxy_repo_url" { value = module.registry.proxy_repo_url }
 output "cluster_name" { value = module.execution.cluster_name }

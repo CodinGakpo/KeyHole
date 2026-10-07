@@ -2,8 +2,8 @@
 
 import math
 
-from mark1.schema.bandwidth import bandwidth_bits, bandwidth_bytes
-from mark1.schema.spec import OutputSchema, SchemaType
+from keyhole.schema.bandwidth import bandwidth_bits, bandwidth_bytes
+from keyhole.schema.spec import OutputSchema, SchemaType
 
 
 def test_boolean_is_one_bit():

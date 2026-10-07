@@ -1,7 +1,7 @@
-"""Interview-paced live demo of Mark-1: real `sbx` commands, one big visual per step.
+"""Interview-paced live demo of Keyhole: real `sbx` commands, one big visual per step.
 
 Every command shown is actually executed (nothing is mocked); the script only adds pacing,
-captions and a visual for each result. State lives in a throwaway MARK1_HOME that is wiped on
+captions and a visual for each result. State lives in a throwaway KEYHOLE_HOME that is wiped on
 start, so the drip budget and the dashboard history begin clean every time.
 
     make showtime                 # pauses for Enter between steps (you control the pace)
@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SHOW_HOME = Path.home() / ".mark1-showtime"
+SHOW_HOME = Path.home() / ".keyhole-showtime"
 DATA = "customers.csv=examples/customers.csv"
 AUTO = "--auto" in sys.argv
 
@@ -76,8 +76,9 @@ def sbx(*args: str) -> tuple[int, str]:
         time.sleep(0 if AUTO else 0.012)
     print()
     proc = subprocess.run(
-        [sys.executable, "-m", "mark1.cli.main", *args],
-        cwd=ROOT, capture_output=True, text=True, env={**os.environ, "MARK1_HOME": str(SHOW_HOME)},
+        [sys.executable, "-m", "keyhole.cli.main", *args],
+        cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "KEYHOLE_HOME": str(SHOW_HOME)},
     )
     out = proc.stdout + proc.stderr
     for line in out.rstrip().splitlines():
@@ -264,7 +265,7 @@ def finale() -> None:
 def main() -> int:
     shutil.rmtree(SHOW_HOME, ignore_errors=True)
     print("\033[2J\033[H" if not AUTO else "")
-    say("MARK-1", CYAN + BOLD)
+    say("KEYHOLE", CYAN + BOLD)
     say("Run untrusted code on private data. Only a bounded, signed answer gets out.", BOLD)
     pause("begin")
     for step in (step_problem, step_honest, step_malicious, step_drip, step_cleanroom,
