@@ -11,6 +11,15 @@ export PATH="$HOME/.local/bin:$PATH"     # so `sbx` is found (add to ~/.zshrc to
 sbx doctor                                # should print crypto: ok, dev key: ok
 ```
 
+## Showtime (the visual version of everything below)
+
+```bash
+make showtime              # terminal 1: paced, press Enter between beats
+make showtime-dashboard    # terminal 2: http://127.0.0.1:8787 over the same runs
+```
+Runs the real `sbx` commands in a throwaway `~/.mark1-showtime` (wiped on each start).
+Rehearse without pauses: `make showtime ARGS=--auto`.
+
 ## The 90-second story (run these in order, narrate as you go)
 
 ### 0. The one-liner that proves it works at all

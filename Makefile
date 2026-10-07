@@ -1,4 +1,4 @@
-.PHONY: help install test unit hostile lint fmt typecheck demo lambda-zip clean
+.PHONY: help install test unit hostile lint fmt typecheck demo showtime showtime-dashboard lambda-zip clean
 
 help:
 	@echo "make install   - editable install with dev extras"
@@ -8,6 +8,8 @@ help:
 	@echo "make lint      - ruff check"
 	@echo "make fmt       - ruff format"
 	@echo "make demo      - run the local end-to-end demo"
+	@echo "make showtime  - paced, visual interview demo (ARGS=--auto for no pauses)"
+	@echo "make showtime-dashboard - dashboard over the showtime runs"
 	@echo "make lambda-zip- build dist/controlplane.zip for the control-plane Lambda"
 
 install:
@@ -33,6 +35,12 @@ typecheck:
 
 demo:
 	python scripts/demo.py
+
+showtime:
+	python scripts/showtime.py $(ARGS)
+
+showtime-dashboard:
+	MARK1_HOME=$$HOME/.mark1-showtime sbx dashboard
 
 lambda-zip:
 	python scripts/build_lambda.py
