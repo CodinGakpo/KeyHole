@@ -68,6 +68,14 @@ one-bit-per-run leak is capped no matter how many times the attacker calls. The 
 guardrail recorded in the audit trail, deliberately *outside* the signed attestation, so the
 attestation schema and verifier stay stable.
 
+**Known gap — the status channel.** "A withheld run leaks nothing" is true of its *output*, not of
+its *status*. The caller sees whether each run succeeded, was withheld, failed or timed out, and a
+failed run reports its exit code — so code can signal through *how* it fails: up to ~8 bits per run
+via the exit code, uncharged, with no limit on the number of runs. The planned fix collapses every
+non-release outcome into one opaque status (details stay in the owner's audit log) and charges the
+budget on every run, making the honest per-run bound log₂(choices + 1). It will ship with a hostile
+test that attempts exactly this.
+
 ### List answers without a hidden wide exit — the bounded array
 
 Some real tasks return a short list (top-k labels, a few extracted fields). The `array` schema type

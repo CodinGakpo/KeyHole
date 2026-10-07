@@ -10,6 +10,11 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## A. Strengthen the guarantee
 
+- **Close the run-status side channel (next).** Today only released runs are charged to the budget,
+  and a failed run reports its exit code to the caller — an uncharged ~8-bit-per-run channel. Return
+  one opaque non-release status (details only in the owner's audit log) and charge every run, so the
+  per-run bound is log₂(choices + 1). *Why:* the budget's guarantee otherwise has a side door.
+  *Easy–Medium.* Ships with a hostile test that tries exactly this.
 - **Hardware-anchored attestation (Nitro Enclaves).** Move signing into a hardware enclave so the
   attestation doesn't depend on trusting the control plane. *Why:* the strongest possible trust
   root. *Hard:* needs specific EC2 instance types (budget impact) and enclave tooling.
@@ -20,8 +25,8 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
   doesn't reveal individual records. *Why:* addresses inference leakage. *Hard.*
 - ✅ **Schema-bandwidth budget enforcement.** *Done* — a per-principal cumulative exit-bits ledger
   (`controlplane/budget.py`) enforced at the exit gate, with an optional rolling window. Repeated
-  small leaks can no longer accumulate past the cap; proven by the `test_drip_exfiltration_over_runs`
-  hostile test. *Why:* defends the residual channel over time.
+  small leaks through released answers can no longer accumulate past the cap; proven by the
+  `test_drip_exfiltration_over_runs` hostile test. (The status channel above is the remaining gap.) *Why:* defends the residual channel over time.
 - **Reproducible/deterministic execution.** Pin the environment and detect nondeterminism so an
   attestation is reproducible. *Why:* strengthens verifiability. *Medium.*
 
@@ -43,7 +48,7 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## C. Scale & performance
 
-- **Warm pools.** Pre-warmed Fargate tasks to kill the ~10–30 s cold start. *Why:* demo/UX. *Medium.*
+- **Warm pools.** Pre-warmed Fargate tasks to kill the ~30–60 s cold start measured on real runs. *Why:* demo/UX. *Medium.*
 - **Firecracker/microVM backend.** Sub-second starts and stronger isolation. *Why:* performance +
   cred. *Hard.*
 - **Concurrency & quotas at scale.** Per-org fair scheduling, backpressure. *Medium.*

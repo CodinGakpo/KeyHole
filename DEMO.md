@@ -1,100 +1,107 @@
 # Keyhole — live demo runbook
 
-Everything here runs **locally, no AWS, ~10 seconds total.** Tested working.
+Local, no AWS. `make showtime` takes ~3 minutes at your pace; the manual fallback below takes about
+the same. Rehearse both before the day.
 
-## One-time setup (do this before the interview, not during)
+## One-time setup (before the interview, not during)
 
 ```bash
 cd ~/Project/keyhole
+python -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-export PATH="$HOME/.local/bin:$PATH"     # so `sbx` is found (add to ~/.zshrc to make permanent)
-sbx doctor                                # should print crypto: ok, dev key: ok
+sbx doctor                       # crypto: ok, dev key: ok
+make showtime ARGS=--auto        # full dry run, no pauses (~12 s)
 ```
 
-## Showtime (the visual version of everything below)
+Use the venv's `sbx` (`source .venv/bin/activate`), not a global one.
+
+## Before you type anything: the opener
+
+Don't start with the terminal. Start with the problem (STUDY-GUIDE Part 0):
+
+> "A hospital wants a vendor's AI to score its patient records. Today one side hands over its crown
+> jewels. Sandboxes don't fix it — they stop code breaking *out*, then hand back whatever it
+> returns. Keyhole limits what the answer can *be*. Let me show you."
+
+## The demo: `make showtime`
 
 ```bash
-make showtime              # terminal 1: paced, press Enter between beats
-make showtime-dashboard    # terminal 2: http://127.0.0.1:8787 over the same runs
+make showtime              # terminal 1 — press Enter to advance
+make showtime-dashboard    # terminal 2 (optional) — http://127.0.0.1:8787, same runs
 ```
-Runs the real `sbx` commands in a throwaway `~/.keyhole-showtime` (wiped on each start).
-Rehearse without pauses: `make showtime ARGS=--auto`.
 
-## The 90-second story (run these in order, narrate as you go)
+Every command it shows is the real `sbx` CLI; state lives in a throwaway `~/.keyhole-showtime`,
+wiped on each start. One line to say per beat — let the screen do the rest:
 
-### 0. The one-liner that proves it works at all
+| Beat | On screen | Say |
+|---|---|---|
+| 1. Data vs exit | 3,312-bit bar vs a 1.58-bit sliver; 2,090-square grid | "The code sees all of this. Only this much can come out." |
+| 2. Honest code | `classify.py` → green **RELEASED** `"spam"` | "Fits the schema, passes the scans, gets signed and released." |
+| 3. Malicious code | `exfil.py` → red **WITHHELD** | "Nobody searched for the data. It just doesn't fit." |
+| 4. Drip attack | budget meter fills over 5 runs, run 6 refused | "Small leaks add up, so each caller has a total bit budget." |
+| 5. Clean room | partner runs on acme's data; intruder **REFUSED** | "The partner computed on data it never received." |
+| 6. Proof | receipt **VALID** → change one field → **INVALID** | "Anyone can check this offline. Touch one byte and it breaks." |
+
+Beats 1 and 3 are where people get it — pause there. After the finale, hand over:
+*"Want to go into the budget, the receipts, the AWS lockdown, or a hole I found in my own design?"*
+
+## Manual fallback (if showtime misbehaves)
+
 ```bash
-make demo
-```
-> "Same dataset, same schema, two programs. Honest one gets a bounded answer released.
-> Malicious one tries to dump the data — nothing comes out. Both are cryptographically attested."
-
-### 1. Honest run — a bounded answer is released
-```bash
+# 2. Honest run — released
 sbx run examples/classify.py --data customers.csv=examples/customers.csv \
     --schema schemas/label.json --local
-```
-> "The code sees the whole customer file. The only thing it's *allowed* to return is one of
-> three enum values — so at most 1.58 bits can ever leave. It returns `spam`. Released."
 
-### 2. Exfiltration attempt — structurally withheld
-```bash
+# 3. Exfiltration attempt — withheld, exit code 3
 sbx run examples/exfil.py --data customers.csv=examples/customers.csv \
     --schema schemas/label.json --local
-```
-> "Identical setup, but this program dumps the entire dataset into the output. The exit gate
-> checks it against the schema, it doesn't conform, and **nothing is released.** Exit code 3.
-> Not scanned for and blocked — structurally impossible, because the exit can't carry that many bits."
 
-### 3. Multi-party clean room — an external party's AI on YOUR data
-```bash
-# Owner registers a dataset (bytes stay in the registry).
-sbx dataset add customers.csv=examples/customers.csv --owner acme
-#   -> note the dataset id, e.g. ds-9415bc8e0812
+# 4. Drip attack — runs 1–5 released, run 6 withheld
+for i in 1 2 3 4 5 6; do
+  sbx run examples/classify.py --data customers.csv=examples/customers.csv \
+      --schema schemas/label.json --local --principal mallory --budget-bits 8 | grep -E "status|budget"
+done
 
-# Owner grants a specific code-provider.
-sbx dataset grant ds-XXXX --to partner-ai
-#   -> note the grant token, e.g. grant-1303fb...
-
-# The provider runs by id + grant. They NEVER receive the bytes.
+# 5. Clean room — note the ids each command prints
+sbx dataset add customers.csv=examples/customers.csv --owner acme          # → ds-XXXX
+sbx dataset grant ds-XXXX --to partner-ai                                  # → grant-XXXX
 sbx run examples/classify.py --dataset ds-XXXX --grant grant-XXXX \
     --principal partner-ai --schema schemas/label.json --save-attestation att.json
-
-# An un-granted party is refused before anything runs.
 sbx run examples/classify.py --dataset ds-XXXX --grant grant-XXXX \
-    --principal intruder --schema schemas/label.json
-#   -> refused (exit 4); the data was never materialized
-```
-> "Two separate principals. The provider runs code on acme's data without ever seeing it, and the
-> attestation binds *both* identities plus the dataset hash."
+    --principal intruder --schema schemas/label.json                       # refused, exit 4
 
-### 4. The proof — verify, then tamper
-```bash
-sbx verify att.json                       # VALID
-# now tamper with a signed claim:
+# 6. Proof — verify, tamper, verify
+sbx verify att.json                                                        # VALID
 python -c "import json,pathlib; p=pathlib.Path('att.json'); d=json.loads(p.read_text()); d['data_owner']='evil'; p.write_text(json.dumps(d))"
-sbx verify att.json                       # INVALID (exit 1)
-```
-> "Anyone can verify the signed attestation offline. Change a single bound field — the owner —
-> and it's immediately INVALID. The proof is tamper-evident."
+sbx verify att.json                                                        # INVALID, exit 1
 
-### 5. The visual — dashboard
-```bash
-sbx dashboard                             # -> http://127.0.0.1:8787   (Ctrl-C to stop)
+sbx dashboard                                                              # http://127.0.0.1:8787
 ```
-> "A read-only forensic view of every run. The signature element is the exit-bandwidth aperture:
-> a log-scale gauge from 1 bit to 1 MB, so a bounded exit reads as the sliver it is. Drag an
-> attestation file onto it to verify."
 
-## The suite (if they ask "how do you know it's not just the happy path?")
+The drip ledger persists in `~/.keyhole/ledger.json`; use a fresh `--principal` name for a rerun.
+
+## "How do you know it's not just the happy path?"
+
 ```bash
-make test        # 90 passed, 2 skipped
-make hostile     # just the adversarial exfiltration suite
+make hostile     # the adversarial suite: dump, encode, stdout, fork bomb, memory hog, drip, clean room
+make test        # everything: 90 passed, 2 skipped
 ```
+
+## Be precise about what the local demo proves
+
+The local run proves the **exit gate**: schema, bandwidth, budget, receipts. The code runs as a
+resource-limited subprocess and *can* reach the network locally. Network containment is the cloud
+layer's job — say so if asked, then use the cloud answer below.
 
 ## If asked about the cloud
-Don't deploy live (costs money, ~30s cold start, risky on someone else's clock). Say:
-> "It deploys into your own AWS account with one `terraform apply` — Lambda + API Gateway,
-> DynamoDB audit, and a KMS signing key so the attestation private key never leaves KMS. I
-> verified it live end-to-end and tore it down to ~$0. Happy to walk the Terraform."
-Then show `infra/terraform/` and the README's *Deploy the cloud API* section.
+
+Don't deploy live (≈5 minutes to come up, 30–60 s cold start per run). Say:
+
+> "It deploys into your own AWS account with one command — Fargate in a subnet with no internet
+> route and an empty IAM role, a Lambda + API Gateway control plane, DynamoDB audit, and a KMS key
+> so the signing key never leaves KMS. I ran it end to end on real AWS: the honest answer came back
+> KMS-signed, the exfiltrator was withheld, and an internet probe from inside the sandbox failed.
+> Then I tore it down to ≈ $0."
+
+Then show `infra/terraform/` and STUDY-GUIDE Part 6.4 (the awsvpc sidecar gotcha). To actually
+deploy before an interview: `infra/terraform/environments/dev/stack.sh up` (and `down` after).

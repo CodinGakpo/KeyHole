@@ -40,11 +40,12 @@ Honest engineering names its risks before they bite. These are the ones known at
 
 ## Operational risks
 
-- **Fargate cold start (~10–30 s).** Hurts demo feel. **Mitigation:** warm pools are roadmap; the
-  local Docker executor keeps the dev loop snappy in the meantime.
+- **Fargate cold start (~30–60 s measured).** Hurts demo feel. **Mitigation:** warm pools are roadmap; the
+  local subprocess executor keeps the dev loop snappy in the meantime.
 
-- **LocalStack Fargate fidelity is limited.** Don't over-trust it for execution correctness — the
-  local Docker executor is the real fast-loop fidelity; LocalStack is for wiring/params.
+- **No emulated-cloud test layer.** Cloud wiring is covered by unit tests of pure functions
+  (launcher params, handlers on an in-memory store) and by the manual real-AWS smoke test; a
+  regression in real AWS behavior is only caught when someone runs `cloud_smoke.py`.
 
 - **Thin auth in the base** (API key / SigV4, single deployer). Multi-user and the multi-party
   clean-room are deferred.

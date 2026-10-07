@@ -34,12 +34,19 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
   exported KMS public key (tamper → INVALID), run + audit persisted; then destroyed (~$1/mo KMS,
   the rest free/pennies).
 - ✅ **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
-  runs (optional rolling window), so drip exfiltration over many conforming runs is bounded, not
-  just each run. Proven by `test_drip_exfiltration_over_runs`.
+  runs (optional rolling window), so drip exfiltration through *released answers* is bounded, not
+  just each run. Proven by `test_drip_exfiltration_over_runs`. Gap: run status is not yet charged
+  (see Next).
 - ✅ **Bounded `array` schema type** — list-shaped answers with a required `max_items`, so their
   exit bandwidth (`max_items × item_bits`) is always finite and disclosed.
 
-Grouped in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md): hardware-anchored attestation (Nitro),
-timing-channel mitigation, differential-privacy exit mode, wider/free-form exit opt-in, mediated
-private-data fetch, warm pools, a web dashboard, the multi-party clean room, and more. Every new
+## Next
+
+- **Close the run-status side channel.** A failed run reports its exit code and isn't charged to the
+  budget, so code can signal ~8 bits per run through how it fails. Fix: one opaque non-release
+  status, budget charged on every run, plus a hostile test (see [`SECURITY.md`](SECURITY.md)).
+
+Then, grouped in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md): hardware-anchored attestation
+(Nitro), timing-channel mitigation, differential-privacy exit mode, wider/free-form exit opt-in,
+mediated private-data fetch, warm pools, signed/time-boxed clean-room grants, and more. Every new
 security claim ships with a hostile test that tries to break it.

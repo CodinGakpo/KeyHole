@@ -13,16 +13,18 @@ proof and the centerpiece of the whole project.
 - **Unit (fast, no cloud).** The core lives here: `schema/validate.py` + `bandwidth.py`
   (conforming outputs pass, non-conforming rejected, bandwidth computed correctly), `attest`
   sign→verify round-trip including **tamper detection**, `launcher.py` parameter construction
-  (empty task role, private subnet, sidecar present), backstop DLP, quotas.
-- **Integration (LocalStack, in CI).** DynamoDB/S3 flows, `ecs.run_task` call shape, client↔handler
-  round-trips, KMS sign/verify. LocalStack's Fargate fidelity is limited, so this covers wiring and
-  parameters, not real container execution.
-- **Integration (real AWS, gated/manual).** An opt-in job does a genuine `terraform apply` → run →
-  `destroy` smoke test. Kept off default CI to protect the budget.
+  (empty task role, private subnet, no public IP), backstop DLP, quotas, budget, clean room, and the
+  control-plane handlers against an in-memory store.
+- **Integration (local).** The MCP server driven over its real stdio wire
+  (`test_mcp_transport.py`), and a Docker harness for the egress proxy (`test_egress_containment.py`,
+  opt-in). No LocalStack layer: cloud wiring is kept in pure functions that unit tests cover.
+- **Integration (real AWS, manual).** `stack.sh up`, then `scripts/cloud_smoke.py` runs an honest
+  classifier, an exfiltrator and an internet probe on real Fargate, then `stack.sh down`. Kept off CI
+  to protect the budget.
 
 ## The hostile suite
 
-Each script runs every CI cycle against the local Docker executor, and (gated) against real
+Each script runs every CI cycle against the local executor, and (gated) against real
 Fargate. Each asserts a control holds **and** that the data-flow record captured the attempt.
 
 | Script | Attempts to… | Expected result |

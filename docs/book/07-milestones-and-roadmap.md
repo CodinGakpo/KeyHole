@@ -11,19 +11,20 @@ bill near zero.
 |---|---|---|
 | **M0 — Scaffold + CI + contracts** | Repo layout, `pyproject.toml`, lint/type/test, CI. Define `common/models.py` + `schema/spec.py` first. Honest threat-model doc skeleton. | The contract every component shares must exist before the components. |
 | **M1 — Local executor + typed exit + bandwidth** | Run code in local Docker, no egress; supply data; validate output against `OutputSchema`; reject non-conforming; compute exit bandwidth. Unit-tested. Minimal non-root, read-only-root-FS image. | This is the heart of the product; prove it locally before touching cloud. |
-| **M2 — Attestation** | `attest/sign` (dev key locally, KMS in cloud) + standalone `attest/verify` + `sbx attest verify`. Binds code/data/schema/output hashes + egress verdict. | The verifiable guarantee; small and self-contained. |
+| **M2 — Attestation** | `attest/sign` (dev key locally, KMS in cloud) + standalone `attest/verify` + `sbx verify`. Binds code/data/schema/output hashes + egress verdict. | The verifiable guarantee; small and self-contained. |
 | **M3 — Egress proxy / "no side exit"** | Deny-by-default proxy image; sandbox's only route is through it; every attempt logged. Two-container Docker-compose harness (bridge network) proves the proxy concept. *Note:* this enforcement model does **not** carry over to a same-task Fargate sidecar (ch. 4); the proxy is kept for a future separate-task chokepoint. | Prove the containment concept structurally. |
 | **M4 — Terraform AWS infra** | All modules; `terraform apply` from an empty account succeeds and `destroy` cleans up; KMS key provisioned. No run yet. | Stand up the cloud substrate independently. |
 | **M5 — Fargate execution end-to-end** ✅ | `launcher.py` → `ecs.run_task`; `run_cloud` uploads the input bundle to S3, presigns GET/PUT, launches the task, waits, fetches output, runs the exit gate + ed25519 attestation; task self-destructs. Verified on a real cluster: honest run released + attested, hostile exfil withheld + attested. As-built refinements: read-only-root needs an **init container to chown the scratch volume**; egress is enforced at the **subnet/route/SG layer**, not an in-task sidecar (see ch. 4). | The base happy path, in the cloud. |
 | **M6 — Confidentiality hardening + hostile suite (the marquee)** ✅ | Empty task role, egress containment, metadata env-strip, timeouts, data-flow audit. `tests/hostile/` proves dump / encode-in-bounded-string / stdout / fork-bomb / memory-hog / **drip-exfiltration-across-runs** are all structurally blocked *and* attested. Cloud egress assertion scripted in `cloud_smoke.py` (runs each apply). | This milestone **is** the product. See [Chapter 8](08-verification.md). |
-| **M7 — MCP server** ✅ | `run_confidential` over stdio (`keyhole-mcp`), integration-tested **through the MCP wire**: honest run released + attested, exfiltration withheld. `principal` passthrough for budget-aware callers. | Small; reuses the exit gate. The headline demo. |
+| **M7 — MCP server** ✅ | `run_confidential_tool` over stdio (`keyhole-mcp`), integration-tested **through the MCP wire**: honest run released + attested, exfiltration withheld. `principal` passthrough for budget-aware callers. | Small; reuses the exit gate. The headline demo. |
 | **M8 — Polish** ✅ | Truthful README (status, mermaid architecture diagram, `make demo` transcript, MCP setup), ARCHITECTURE.md corrected to as-built, `sbx doctor` checks the mcp/cloud extras + dev key. | Make it legible and installable. |
 | **M9 — Cloud control plane (beyond base)** ✅ | Lambda + API Gateway HTTP API with an **async submit/poll** lifecycle (fits the ~29s gateway timeout despite Fargate cold start), DynamoDB persistence (append-only audit), and **KMS-signed attestations** (ECDSA P-256; private key never leaves KMS). `sbx run` without `--local` drives the API. Verified live end-to-end then destroyed: honest released + KMS-attested, exfil withheld, attestation VALID vs the exported KMS public key (tamper → INVALID). | Makes the "one `terraform apply` → a confidential-execution API in your own account" pitch literally true. |
 
 ## Beyond the base (shipped)
 
 - **Cumulative exit-bandwidth budget** — a per-principal ledger caps *total* released bits across
-  runs, so drip exfiltration over many conforming runs is bounded too.
+  runs, so drip exfiltration through released answers is bounded too (run status is the
+  remaining gap — ch. 4).
 - **Bounded `array` schema type** — list answers with a required `max_items`, bandwidth still finite.
 - **Web dashboard** (`sbx dashboard`) — a self-contained, read-only viewer of the run/audit trail
   whose signature element is the exit-bandwidth aperture gauge.

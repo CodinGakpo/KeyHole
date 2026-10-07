@@ -4,7 +4,7 @@ A short map; the narrative version is [`docs/book/05-architecture.md`](docs/book
 
 ## Components
 
-- **Clients** — `sbx` CLI and an MCP server (`run_confidential`), both thin wrappers over one REST
+- **Clients** — `sbx` CLI and an MCP server (`run_confidential_tool`), both thin wrappers over one REST
   API (and an in-process local path).
 - **Control plane** — a Lambda behind an API Gateway HTTP API. Validates requests, launches
   sandboxes, runs the **exit gate**, signs attestations, records audit. Scales to zero.
@@ -14,7 +14,7 @@ A short map; the narrative version is [`docs/book/05-architecture.md`](docs/book
   group — not by an in-task sidecar (Fargate `awsvpc` containers share one network namespace, so a
   sidecar cannot intercept its neighbours; see book ch. 4).
 - **State & storage** — DynamoDB (`keyhole_runs`, append-only `keyhole_audit`), S3 (code/data/schema/
-  output/attestation, SSE-KMS), ECR (images), KMS (encryption + attestation signing).
+  output/attestation; SSE-S3, deleted after each run), ECR (images), KMS (attestation signing only).
 
 ## A run
 
@@ -24,8 +24,8 @@ sbx run code.py --data d.csv --schema s.json
   → control plane: validate schema, upload input bundle to S3, presign GET (input) + PUT (output)
   → ecs.run_task → Fargate: init-chown, then sandbox fetches the presigned bundle, runs the code
     (no internet route, empty task role, read-only root), PUTs the output envelope back to S3
-  → control plane EXIT GATE: validate vs schema → bandwidth (+ cumulative budget) → DLP backstop
-    → sign attestation → release or withhold
+  → control plane EXIT GATE: validate vs schema → bandwidth → DLP backstop → cumulative budget
+    → release or withhold → sign attestation (either way)
   → GET /runs/{id} returns released output + attestation; sbx verify checks it independently
 ```
 

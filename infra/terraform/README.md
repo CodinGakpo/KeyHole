@@ -13,22 +13,26 @@ One `terraform apply` stands up the whole confidential-execution platform in you
 | Module | What it provisions |
 |---|---|
 | `network`    | VPC, private subnet (no NAT), deny-all security group, S3 gateway endpoint, optional ECR/Logs interface endpoints. |
-| `state`      | DynamoDB `keyhole_runs` + append-only `keyhole_audit`; S3 bucket (SSE-KMS, block-public, lifecycle expiry). |
+| `state`      | DynamoDB `keyhole_runs` + append-only `keyhole_audit`; S3 bucket (SSE-S3, block-public, lifecycle expiry). |
 | `registry`   | ECR repos for the sandbox and egress-proxy images (scan-on-push). |
 | `execution`  | ECS cluster, sandbox task definition (empty task role), the three IAM roles. |
 | `controlplane` | Lambda + API Gateway HTTP API + its scoped role. |
 | `guardrails` | AWS Budgets alarm + quota parameters. |
 
-## Usage (when ready — not yet applied)
+## Usage
+
+Applied and verified end to end on a real account (38 resources with the control plane on), then
+destroyed. From the repo root:
 
 ```bash
-cd environments/dev
-terraform init
-terraform plan     # review every resource before creating anything
-terraform apply
-# ... use it ...
-terraform destroy  # tear down; re-apply on any account to rebuild
+infra/terraform/environments/dev/stack.sh up     # Lambda zip, terraform apply, push sandbox image,
+                                                 # export KMS public key to /tmp/kms.pem
+infra/terraform/environments/dev/stack.sh down   # terraform destroy
+infra/terraform/environments/dev/tf.sh plan      # any other terraform command, same credentials
 ```
 
-Nothing here has been applied yet. Review `terraform plan` output before the first apply so you
-see exactly what will be created and can confirm it stays within the free tier.
+Both scripts read `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` from the repo-root `.env` (parsed, never
+sourced) and ignore `AWS_PROFILE`. State is local (`environments/dev/terraform.tfstate`,
+gitignored). Cloud runs need `enable_egress_endpoints = true` (in `terraform.tfvars`) so Fargate can
+pull the image and write logs — about $0.03/hour while up. The KMS key (~$1/month) is scheduled for
+deletion on destroy, with AWS's minimum 7-day wait.

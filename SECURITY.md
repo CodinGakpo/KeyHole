@@ -14,6 +14,10 @@ guaranteed, what is bounded, and what is out of scope. The full reasoning is in
 
 ## Structurally guaranteed
 
+The first three guarantees come from the **cloud deployment** (Fargate + network + IAM). Local runs
+(`sbx run --local`) execute the code as a resource-limited subprocess that *can* reach the network;
+locally, only the exit gate's guarantees apply.
+
 - **No network egress.** Containment is enforced at the subnet/route/SG layer — a private subnet
   with no NAT and no internet route, and a run security group whose only egress is to AWS service
   endpoints (S3 prefix list + in-subnet ECR/Logs). Default runs cannot reach the general internet.
@@ -34,6 +38,20 @@ guaranteed, what is bounded, and what is out of scope. The full reasoning is in
   choose the permitted value to encode a few bits. This is **bounded** to the schema's bandwidth
   and **disclosed** — the exact released bytes are recorded in the signed attestation. We never
   claim "zero leak."
+- Repeated runs could accumulate that residual. A **per-caller cumulative budget** caps the total
+  bits released across runs (`controlplane/budget.py`).
+
+## Known gap: run status is a side channel
+
+The budget charges only *released* runs, but every run's **status is visible to the caller**, and a
+failed run reports its exit code (`controlplane/gate.py`). Code can therefore signal through *how*
+it fails — up to ~8 bits per run via the exit code, uncharged and unlimited in run count.
+Released-vs-withheld and timeout-vs-not carry smaller amounts the same way.
+
+**Planned fix:** return one opaque non-release status with no detail to the caller (details stay in
+the audit log for the data owner) and charge the budget for every run. The per-run bound then
+becomes log₂(choices + 1) — the extra outcome is "not released". It ships with a hostile test that
+attempts exactly this exfiltration.
 
 ## Out of scope (named, not hidden)
 
@@ -44,8 +62,9 @@ guaranteed, what is bounded, and what is out of scope. The full reasoning is in
 
 ## Attestation trust root
 
-The base attestation is signed by the control plane using a per-deployment KMS key; it proves what
-the control plane observed. Hardware-anchored attestation (Nitro Enclaves), which removes the need
+In the cloud, attestations are signed by the control plane with a per-deployment **KMS key**
+(ECDSA P-256; the private key never leaves KMS). Locally they are signed with an **ed25519 dev key**
+under `~/.keyhole`. Either way the attestation proves what the control plane observed. Hardware-anchored attestation (Nitro Enclaves), which removes the need
 to trust the control plane, is on the roadmap.
 
 ## Reporting
