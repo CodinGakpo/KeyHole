@@ -1,3 +1,6 @@
+# Prefer the repo venv so demo targets work without activating it.
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
+
 .PHONY: help install test unit hostile lint fmt typecheck demo showtime showtime-dashboard lambda-zip clean
 
 help:
@@ -34,13 +37,13 @@ typecheck:
 	mypy src
 
 demo:
-	python scripts/demo.py
+	$(PYTHON) scripts/demo.py
 
 showtime:
-	python scripts/showtime.py $(ARGS)
+	$(PYTHON) scripts/showtime.py $(ARGS)
 
 showtime-dashboard:
-	KEYHOLE_HOME=$$HOME/.keyhole-showtime sbx dashboard
+	KEYHOLE_HOME=$$HOME/.keyhole-showtime $(PYTHON) -m keyhole.cli.main dashboard
 
 lambda-zip:
 	python scripts/build_lambda.py

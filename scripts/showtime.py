@@ -263,8 +263,24 @@ def finale() -> None:
     print()
 
 
+def reset_state() -> None:
+    """Wipe runs, datasets and the budget ledger, but keep the signing key.
+
+    A running `make showtime-dashboard` loads the public key once at startup; a fresh key per show
+    would make every new run fail verification there.
+    """
+    SHOW_HOME.mkdir(parents=True, exist_ok=True)
+    for child in SHOW_HOME.iterdir():
+        if child.name.startswith("dev-signing"):
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def main() -> int:
-    shutil.rmtree(SHOW_HOME, ignore_errors=True)
+    reset_state()
     print("\033[2J\033[H" if not AUTO else "")
     say("KEYHOLE", CYAN + BOLD)
     say("Run untrusted code on private data. Only a bounded, signed answer gets out.", BOLD)
