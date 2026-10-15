@@ -16,25 +16,25 @@ help:
 	@echo "make lambda-zip- build dist/controlplane.zip for the control-plane Lambda"
 
 install:
-	python -m pip install -e '.[dev]'
+	$(PYTHON) -m pip install -e '.[dev]'
 
 test:
-	python -m pytest -q
+	$(PYTHON) -m pytest -q
 
 unit:
-	python -m pytest -q tests/unit
+	$(PYTHON) -m pytest -q tests/unit
 
 hostile:
-	python -m pytest -q tests/hostile
+	$(PYTHON) -m pytest -q tests/hostile
 
 lint:
-	ruff check src tests
+	$(PYTHON) -m ruff check src tests
 
 fmt:
-	ruff format src tests
+	$(PYTHON) -m ruff format src tests
 
 typecheck:
-	mypy src
+	$(PYTHON) -m mypy src
 
 demo:
 	$(PYTHON) scripts/demo.py
@@ -46,7 +46,7 @@ showtime-dashboard:
 	KEYHOLE_HOME=$$HOME/.keyhole-showtime $(PYTHON) -m keyhole.cli.main dashboard
 
 lambda-zip:
-	python scripts/build_lambda.py
+	$(PYTHON) scripts/build_lambda.py
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache **/__pycache__
