@@ -19,6 +19,8 @@ import json
 import uuid
 from dataclasses import dataclass
 
+from pydantic import BaseModel, Field, ValidationError
+
 from keyhole.attest.sign import Signer
 from keyhole.common.models import DataFlowEvent, DataFlowEventKind, RunRequest
 from keyhole.controlplane.budget import BudgetPolicy, Ledger
@@ -39,6 +41,21 @@ class CloudConfig:
     bucket: str
     sandbox_container_name: str = "sandbox"
     prefix: str = "runs"
+
+
+class Envelope(BaseModel):
+    """The sandbox's report of a run. Written from inside the box, so treated as hostile: the
+    untrusted code may be able to forge it, and nothing here may reach the caller unchecked."""
+
+    model_config = {"strict": True}
+
+    output_raw: str | None = None
+    exit_code: int | None = Field(default=None, ge=-255, le=255)
+    timed_out: bool = False
+    output_bytes: int = Field(default=0, ge=0, le=2**40)
+    duration_ms: int = Field(default=0, ge=0, le=24 * 3600 * 1000)
+    stdout_tail: str = ""
+    stderr_tail: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,6 +116,12 @@ def submit_cloud(
     return SubmitResult(run_id=rid, task_arn=task_arn, input_key=input_key, output_key=output_key)
 
 
+def stop_task(config: CloudConfig, task_arn: str, ecs_client=None) -> None:
+    """Stop a task that has outlived its deadline (a killed or hung in-box runner never exits)."""
+    ecs = ecs_client or _boto("ecs", config.region)
+    ecs.stop_task(cluster=config.cluster, task=task_arn, reason="keyhole: run deadline exceeded")
+
+
 def task_is_stopped(config: CloudConfig, task_arn: str, ecs_client=None) -> bool:
     """Whether the task has reached STOPPED (safe to finalize)."""
     ecs = ecs_client or _boto("ecs", config.region)
@@ -113,6 +136,8 @@ def finalize_cloud(
     submit: SubmitResult,
     ledger: Ledger | None = None,
     budget: BudgetPolicy | None = None,
+    input_hashes: tuple[str, str] | None = None,
+    precharged_cumulative_bits: float | None = None,
 ) -> GateOutcome:
     """Fetch the stopped task's output, run the exit gate, and clean up its S3 objects."""
     s3 = _boto("s3", config.region)
@@ -122,7 +147,8 @@ def finalize_cloud(
     exec_result = _fetch_result(s3, config.bucket, submit.output_key, stopped_reason)
     outcome = run_exit_gate(
         submit.run_id, request, exec_result, signer,
-        task_arn=submit.task_arn, ledger=ledger, budget=budget,
+        task_arn=submit.task_arn, ledger=ledger, budget=budget, input_hashes=input_hashes,
+        precharged_cumulative_bits=precharged_cumulative_bits,
     )
 
     # Best-effort cleanup (the bucket lifecycle also expires these).
@@ -191,21 +217,28 @@ def _fetch_result(s3, bucket: str, output_key: str, stopped_reason: str | None) 
             timed_out=False,
             output_bytes=0,
             events=events,
+            isolation="fargate",
         )
 
-    env = json.loads(body)
+    try:
+        env = Envelope.model_validate_json(body)
+    except ValidationError:
+        # A malformed envelope is just another way to fail: same opaque outcome, no detail out.
+        events.append(DataFlowEvent(
+            kind=DataFlowEventKind.LIMIT_HIT, detail="malformed result envelope", denied=True
+        ))
+        env = Envelope()
     events.append(
-        DataFlowEvent(
-            kind=DataFlowEventKind.OUTPUT_WRITTEN, detail=f"{env.get('output_bytes', 0)} bytes"
-        )
+        DataFlowEvent(kind=DataFlowEventKind.OUTPUT_WRITTEN, detail=f"{env.output_bytes} bytes")
     )
     return ExecResult(
-        exit_code=env.get("exit_code"),
-        output_raw=env.get("output_raw"),
-        stdout=env.get("stdout_tail", ""),
-        stderr=env.get("stderr_tail", ""),
-        duration_ms=env.get("duration_ms", 0),
-        timed_out=env.get("timed_out", False),
-        output_bytes=env.get("output_bytes", 0),
+        exit_code=env.exit_code,
+        output_raw=env.output_raw,
+        stdout=env.stdout_tail,
+        stderr=env.stderr_tail,
+        duration_ms=env.duration_ms,
+        timed_out=env.timed_out,
+        output_bytes=env.output_bytes,
         events=events,
+        isolation="fargate",
     )

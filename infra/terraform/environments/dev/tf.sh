@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run terraform for this environment against the keyhole AWS account (162663626031, us-east-1).
+# Run terraform for this environment against the keyhole AWS account (us-east-1).
 #
 # Loads AWS_ACCESS_KEY / AWS_SECRET_KEY from the repo-root .env (parsed, never sourced — the file
 # is not a clean shell script) so the keys stay off the command line, and so the default ~/.aws

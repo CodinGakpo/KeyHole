@@ -1,7 +1,7 @@
 # Network: a private subnet with NO NAT gateway, so default runs have no internet route.
 # Image pull and data I/O go through a free S3 gateway endpoint plus optional (opt-in) interface
-# endpoints for ECR + Logs. The deny-all security group is the sandbox's only egress posture;
-# an egress-proxy sidecar is the sole intended path when a run is explicitly allowlisted.
+# endpoints for ECR + Logs. The run security group allows only those endpoints; the S3 endpoint
+# policy then limits S3 itself to our own artifacts prefix, so S3 cannot be used as a way out.
 
 variable "name_prefix" {
   type    = string
@@ -23,6 +23,14 @@ variable "private_subnet_cidr" {
 variable "enable_egress_endpoints" {
   type    = bool
   default = false
+}
+
+# The run security group allows 443 to every S3 address in the region, and the default endpoint
+# policy allows all of S3: untrusted code holding a presigned PUT for *its own* bucket could
+# upload the dataset. This policy allows only our artifacts prefix and ECR's layer bucket.
+variable "artifacts_bucket" {
+  type        = string
+  description = "Bucket the sandbox reads inputs from and writes results to (runs/ prefix only)"
 }
 
 data "aws_region" "current" {}
@@ -101,6 +109,27 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.private.id]
   tags              = { Name = "${var.name_prefix}-s3-gw" }
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "RunArtifactsOnly"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = ["s3:GetObject", "s3:PutObject"]
+        Resource  = "arn:aws:s3:::${var.artifacts_bucket}/runs/*"
+      },
+      {
+        # ECR stores image layers here; Fargate pulls through this endpoint.
+        Sid       = "EcrImageLayers"
+        Effect    = "Allow"
+        Principal = "*"
+        Action    = "s3:GetObject"
+        Resource  = "arn:aws:s3:::prod-${data.aws_region.current.region}-starport-layer-bucket/*"
+      },
+    ]
+  })
 }
 
 # Optional interface endpoints for cloud runs (image pull + logs). Opt-in to control cost.
