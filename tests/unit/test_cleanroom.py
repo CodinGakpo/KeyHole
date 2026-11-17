@@ -17,6 +17,8 @@ _FILES = {"customers.csv": "a,spam\nb,ham\n"}
 _SCHEMA = OutputSchema(type=SchemaType.ENUM, choices=["spam", "ham"])
 _CLASSIFY = 'import os,json;json.dump("spam",open(os.environ["KEYHOLE_OUTPUT"],"w"))'
 
+POLICY = {"max_bits_per_run": 8.0, "budget_bits": 64.0}  # the owner's exit policy
+
 
 @pytest.fixture
 def signer() -> Ed25519Signer:
@@ -25,7 +27,7 @@ def signer() -> Ed25519Signer:
 
 def test_dataset_round_trip_and_hash(tmp_path):
     store = DatasetStore(root=tmp_path)
-    ds = store.add("acme", _FILES)
+    ds = store.add("acme", _FILES, **POLICY)
     assert store.get(ds.dataset_id).owner == "acme"
     assert ds.data_sha256 == sha256_of_mapping(_FILES)
     assert store.load_files(ds.dataset_id) == _FILES
@@ -34,10 +36,10 @@ def test_dataset_round_trip_and_hash(tmp_path):
 
 def test_authorize_matrix(tmp_path):
     store = DatasetStore(root=tmp_path)
-    ds = store.add("acme", _FILES)
+    ds = store.add("acme", _FILES, **POLICY)
     g_named = store.grant(ds.dataset_id, "partner-ai")
     g_any = store.grant(ds.dataset_id, "*")
-    other = store.add("acme", {"x": "y"})
+    other = store.add("acme", {"x": "y"}, **POLICY)
     g_other = store.grant(other.dataset_id, "partner-ai")
 
     assert authorize(ds, g_named, "partner-ai").allowed
@@ -50,7 +52,7 @@ def test_authorize_matrix(tmp_path):
 
 def test_run_in_cleanroom_binds_both_identities(tmp_path, signer):
     store = DatasetStore(root=tmp_path)
-    ds = store.add("acme", _FILES)
+    ds = store.add("acme", _FILES, **POLICY)
     grant = store.grant(ds.dataset_id, "partner-ai")
 
     outcome = run_in_cleanroom(store, ds.dataset_id, grant.grant_id, "partner-ai",
@@ -68,7 +70,7 @@ def test_run_in_cleanroom_binds_both_identities(tmp_path, signer):
 
 def test_ungranted_provider_is_refused_without_running(tmp_path, signer):
     store = DatasetStore(root=tmp_path)
-    ds = store.add("acme", _FILES)
+    ds = store.add("acme", _FILES, **POLICY)
     grant = store.grant(ds.dataset_id, "partner-ai")
 
     outcome = run_in_cleanroom(store, ds.dataset_id, grant.grant_id, "intruder",

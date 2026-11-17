@@ -82,7 +82,7 @@ def test_timeout_is_opaque_to_the_caller_and_recorded_for_the_owner():
     assert outcome.audit.status.value == "timeout"
 
 
-def test_egress_attempts_recorded_in_attestation():
+def test_egress_attempts_recorded_for_the_owner():
     schema = OutputSchema(type=SchemaType.BOOLEAN)
     signer = Ed25519Signer.generate()
     events = [
@@ -90,8 +90,6 @@ def test_egress_attempts_recorded_in_attestation():
         DataFlowEvent(kind=DataFlowEventKind.EGRESS_ATTEMPT, detail="evil.example", denied=True),
     ]
     outcome = run_exit_gate("r6", _request(schema), _exec(True, events=events), signer)
-    assert outcome.attestation.egress_attempts == 2
-    assert outcome.attestation.egress_denied == 2
     assert outcome.audit.egress_denied == 2
 
 

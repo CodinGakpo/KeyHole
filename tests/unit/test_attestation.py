@@ -14,8 +14,7 @@ def _attestation(**overrides) -> Attestation:
         output_sha256="o" * 64,
         output={"category": "spam"},
         exit_bandwidth_bits=1.58,
-        egress_attempts=0,
-        egress_denied=0,
+        run_channel_bits=2.0,
         exit_code=0,
         released=True,
     )
@@ -36,10 +35,10 @@ def test_tampering_with_output_fails_verification():
     assert not verify_attestation(att, signer.public_key_pem())
 
 
-def test_tampering_with_egress_verdict_fails():
+def test_tampering_with_the_charge_fails():
     signer = Ed25519Signer.generate()
-    att = sign_attestation(_attestation(egress_denied=3, egress_attempts=3), signer)
-    att.egress_denied = 0  # pretend nothing was denied
+    att = sign_attestation(_attestation(cumulative_exit_bits=40.0), signer)
+    att.cumulative_exit_bits = 2.0  # pretend far less has left
     assert not verify_attestation(att, signer.public_key_pem())
 
 

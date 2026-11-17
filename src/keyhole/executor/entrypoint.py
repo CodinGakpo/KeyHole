@@ -9,17 +9,21 @@ Contract with user code:
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
-import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from keyhole.common.models import DataFlowEvent, DataFlowEventKind, Limits, RunRequest
+from keyhole.executor import sandbox
 from keyhole.executor.limits import build_preexec
 
 OUTPUT_FILENAME = "__keyhole_output__.json"
+_LOG_TAIL = 64 * 1024  # bytes of stdout/stderr kept for the owner's audit
 
 
 @dataclass
@@ -34,6 +38,7 @@ class ExecResult:
     timed_out: bool
     output_bytes: int
     events: list[DataFlowEvent] = field(default_factory=list)
+    isolation: str = "none"  # which box ran the code: "bwrap", "none", "fargate", ...
 
 
 def run_code(request: RunRequest, workdir: str | Path | None = None) -> ExecResult:
@@ -67,31 +72,42 @@ def _run_in(request: RunRequest, work: Path) -> ExecResult:
         "PYTHONDONTWRITEBYTECODE": "1",
     }
 
+    backend = sandbox.choose_backend()
+    name = f"keyhole-{uuid.uuid4().hex[:12]}"
+    # rlimits apply to the process we start: for docker that is the CLI, which the container's own
+    # limits replace (an address-space cap would break the Go binary, not the code).
+    preexec = (
+        None if backend == "docker"
+        else build_preexec(limits, limit_processes=backend == "none")
+    )
     start = time.monotonic()
     timed_out = False
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-I", str(code_path)],
+    # stdout/stderr go to files, not pipes: the child's RLIMIT_FSIZE then bounds them (a pipe
+    # would be read into our memory without limit), and a stray grandchild cannot hold us open.
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(
+            sandbox.command(backend, work, code_path, limits, name),
             cwd=str(work),
             env=env,
-            capture_output=True,
-            text=True,
-            timeout=limits.timeout_seconds,
-            preexec_fn=build_preexec(limits),
-            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=out,
+            stderr=err,
+            preexec_fn=preexec,
+            start_new_session=True,  # its own process group, so a timeout can kill the lot
         )
-        exit_code: int | None = proc.returncode
-        stdout, stderr = proc.stdout, proc.stderr
-    except subprocess.TimeoutExpired as e:
-        timed_out = True
-        exit_code = None
-        stdout = e.stdout or "" if isinstance(e.stdout, str) else ""
-        stderr = e.stderr or "" if isinstance(e.stderr, str) else ""
-        events.append(
-            DataFlowEvent(
-                kind=DataFlowEventKind.LIMIT_HIT, detail="wall-clock timeout", denied=True
+        try:
+            exit_code: int | None = proc.wait(timeout=limits.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            _kill_group(proc)
+            sandbox.stop(backend, name)
+            timed_out = True
+            exit_code = None
+            events.append(
+                DataFlowEvent(
+                    kind=DataFlowEventKind.LIMIT_HIT, detail="wall-clock timeout", denied=True
+                )
             )
-        )
+        stdout, stderr = _tail(out), _tail(err)
 
     duration_ms = int((time.monotonic() - start) * 1000)
 
@@ -116,4 +132,21 @@ def _run_in(request: RunRequest, work: Path) -> ExecResult:
         timed_out=timed_out,
         output_bytes=output_bytes,
         events=events,
+        isolation=backend,
     )
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    """Kill the child and everything it spawned (under bwrap the namespace dies with it)."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, AttributeError):
+        proc.kill()
+    proc.wait()
+
+
+def _tail(f) -> str:
+    """The last ``_LOG_TAIL`` bytes of a captured stream, decoded leniently (it is untrusted)."""
+    size = f.seek(0, 2)
+    f.seek(max(0, size - _LOG_TAIL))
+    return f.read().decode("utf-8", errors="replace")

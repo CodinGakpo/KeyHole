@@ -17,8 +17,12 @@ except ImportError:  # pragma: no cover - non-POSIX fallback
     resource = None  # type: ignore[assignment]
 
 
-def build_preexec(limits: Limits) -> Callable[[], None] | None:
-    """Return a preexec_fn that applies rlimits, or None if unsupported."""
+def build_preexec(limits: Limits, limit_processes: bool = True) -> Callable[[], None] | None:
+    """Return a preexec_fn that applies rlimits, or None if unsupported.
+
+    ``limit_processes=False`` when a sandbox applies its own process cap from inside: outside a
+    user namespace RLIMIT_NPROC counts every process the user owns, not just this run's.
+    """
     if resource is None:  # pragma: no cover
         return None
 
@@ -32,7 +36,8 @@ def build_preexec(limits: Limits) -> Callable[[], None] | None:
         # Cap the size of any file the code writes.
         _set(resource.RLIMIT_FSIZE, max(limits.max_output_bytes * 4, 1024 * 1024))
         # Limit process/thread creation to blunt fork bombs.
-        _set(resource.RLIMIT_NPROC, 256)
+        if limit_processes:
+            _set(resource.RLIMIT_NPROC, 256)
 
     return _apply
 

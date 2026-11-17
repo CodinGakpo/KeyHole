@@ -45,7 +45,7 @@ from keyhole.controlplane.budget import BudgetPolicy, Ledger, check_budget
 from keyhole.dlp import scan_pii, scan_secrets
 from keyhole.executor.entrypoint import ExecResult
 from keyhole.schema.bandwidth import bandwidth_bits, run_channel_bits
-from keyhole.schema.validate import validate_output
+from keyhole.schema.validate import canonicalize, validate_output
 
 # The one reason a caller ever sees for a non-release outcome.
 NOT_RELEASED = "not released (the data owner's audit log has the details)"
@@ -67,6 +67,9 @@ def run_exit_gate(
     ledger: Ledger | None = None,
     budget: BudgetPolicy | None = None,
     now: datetime | None = None,
+    budget_key: str | None = None,
+    input_hashes: tuple[str, str] | None = None,
+    precharged_cumulative_bits: float | None = None,
 ) -> GateOutcome:
     """Inspect a run's output and produce a released-or-withheld, attested outcome.
 
@@ -74,14 +77,22 @@ def run_exit_gate(
     ``run_channel_bits(schema)`` against the principal's cumulative budget, and once the budget
     cannot cover a run, the run is withheld regardless of what the code did (see
     :mod:`keyhole.controlplane.budget`). With either unset, no budget applies.
+
+    The budget is keyed on ``budget_key`` — the dataset, in the clean room — falling back to the
+    caller's self-declared ``request.principal``, which is only as good as that declaration.
     """
+    key = budget_key or request.principal
+    # A run whose budget was charged before it ran (the cloud charges at admission) reports the
+    # dataset's running total in its receipt; no ledger is passed to the gate in that case.
     schema = request.output_schema
     bandwidth = bandwidth_bits(schema)
     channel = run_channel_bits(schema)
-    cumulative_exit_bits: float | None = None
+    cumulative_exit_bits: float | None = precharged_cumulative_bits
 
-    code_sha = sha256_hex(request.code)
-    data_sha = sha256_of_mapping(request.data)
+    # (code, data) hashes taken at submit time, when the caller no longer holds the inputs.
+    code_sha, data_sha = input_hashes or (
+        sha256_hex(request.code), sha256_of_mapping(request.data)
+    )
     schema_sha = sha256_of_json(schema.model_dump(mode="json"))
 
     egress_attempts = sum(
@@ -103,7 +114,7 @@ def run_exit_gate(
     # Budget first: an exhausted caller learns nothing from the run, so the decision must not depend
     # on the code's behavior. The decision itself depends only on the caller's own run history.
     decision = (
-        check_budget(budget, ledger, request.principal, channel, now)
+        check_budget(budget, ledger, key, channel, now)
         if ledger is not None and budget is not None
         else None
     )
@@ -129,7 +140,7 @@ def run_exit_gate(
     else:
         try:
             candidate = json.loads(exec_result.output_raw)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):  # bad JSON, absurdly long integers, deep nesting
             status = RunStatus.WITHHELD
             withheld_reason = "output is not valid JSON"
         else:
@@ -140,6 +151,7 @@ def run_exit_gate(
                     validation.errors
                 )
             else:
+                candidate = canonicalize(candidate, schema)
                 serialized = canonical_json_bytes(candidate).decode("utf-8")
                 findings = scan_secrets(serialized) + scan_pii(serialized)
                 dlp_findings = len(findings)
@@ -157,10 +169,8 @@ def run_exit_gate(
 
     # Charge every run the budget admitted — a non-release outcome is information too.
     if ledger is not None and budget is not None and decision is not None and decision.allowed:
-        ledger.record(request.principal, channel, now or utcnow())
-        cumulative_exit_bits = ledger.spent(
-            request.principal, budget.window_seconds, now or utcnow()
-        )
+        ledger.record(key, channel, now or utcnow())
+        cumulative_exit_bits = ledger.spent(key, budget.window_seconds, now or utcnow())
 
     # Caller-visible fields: released + value, or one opaque "withheld". An exhausted budget is
     # reported as such — it follows from the caller's own history, not from the code.
@@ -177,10 +187,11 @@ def run_exit_gate(
         output_sha256=output_sha,
         output=output_value,
         exit_bandwidth_bits=bandwidth,
-        egress_attempts=egress_attempts,
-        egress_denied=egress_denied,
+        run_channel_bits=channel,
+        cumulative_exit_bits=cumulative_exit_bits,
         exit_code=caller_exit_code,
         released=released,
+        isolation=exec_result.isolation,
         data_owner=request.data_owner,
         code_provider=request.principal,
         dataset_id=request.dataset_id,
@@ -195,7 +206,6 @@ def run_exit_gate(
         exit_bandwidth_bits=bandwidth,
         cumulative_exit_bits=cumulative_exit_bits,
         exit_code=caller_exit_code,
-        duration_ms=exec_result.duration_ms,
         attestation_id=attestation.attestation_id,
     )
 
@@ -204,6 +214,8 @@ def run_exit_gate(
         status=status,
         withheld_reason=withheld_reason,
         exit_code=exec_result.exit_code,
+        duration_ms=exec_result.duration_ms,
+        isolation=exec_result.isolation,
         code_sha256=code_sha,
         data_sha256=data_sha,
         schema_sha256=schema_sha,

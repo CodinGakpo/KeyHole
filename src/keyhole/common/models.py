@@ -83,7 +83,6 @@ class RunResult(BaseModel):
     exit_bandwidth_bits: float | None = None
     cumulative_exit_bits: float | None = None  # principal's total charged bits (if budgeted)
     exit_code: int | None = None  # 0 when released, else None
-    duration_ms: int | None = None
     attestation_id: str | None = None
 
 
@@ -99,6 +98,8 @@ class AuditRecord(BaseModel):
     status: RunStatus
     withheld_reason: str | None = None
     exit_code: int | None = None
+    duration_ms: int | None = None  # owner-only: how long the code ran is a channel it controls
+    isolation: str | None = None  # which sandbox ran the code ("bwrap", "none", "fargate")
     code_sha256: str
     data_sha256: str
     schema_sha256: str

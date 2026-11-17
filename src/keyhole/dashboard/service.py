@@ -61,6 +61,7 @@ def run_detail(store: Store, run_id: str, pubkey_pem: bytes | None) -> dict[str,
             status=audit.status.value,
             withheld_reason=audit.withheld_reason,
             exit_code=audit.exit_code,
+            duration_ms=audit.duration_ms,
         )
     return {
         "result": owner_view,

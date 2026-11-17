@@ -206,7 +206,7 @@ async function detail(id){
 
     <div class="grid">
       <div class="cell"><div class="k">released value</div><div class="v">${r.output!=null?esc(JSON.stringify(r.output)):'&mdash; nothing'}</div></div>
-      <div class="cell"><div class="k">egress denied</div><div class="v">${a?a.egress_denied+' / '+a.egress_attempts:'&mdash;'}</div></div>
+      <div class="cell"><div class="k">charged this run</div><div class="v">${at&&at.run_channel_bits!=null?at.run_channel_bits.toFixed(2)+' bits':'&mdash;'}</div></div>
       <div class="cell"><div class="k">dlp findings</div><div class="v">${a?a.dlp_findings:'&mdash;'}</div></div>
       <div class="cell"><div class="k">duration</div><div class="v">${r.duration_ms!=null?r.duration_ms+' ms':'&mdash;'}</div></div>
     </div>

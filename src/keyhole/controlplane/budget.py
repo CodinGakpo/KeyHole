@@ -14,12 +14,18 @@ log2(N + 1) for N conforming values plus the one opaque "not released" outcome â
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 from keyhole.common.models import utcnow
+
+try:
+    import fcntl  # POSIX only
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -69,8 +75,8 @@ class FileLedger:
     """JSON-file-backed ledger so spend accumulates across separate CLI processes.
 
     Stored under the ``~/.keyhole`` state dir (see :func:`keyhole.common.config.home_dir`). A
-    missing or corrupt file is treated as an empty ledger â€” the budget is a best-effort guardrail,
-    not a signed record, so it fails open to "no spend yet" rather than crashing a run.
+    missing file is an empty ledger; a corrupt one raises, so runs are refused rather than
+    silently handed a fresh budget. Writes replace the file atomically under a lock.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -79,8 +85,10 @@ class FileLedger:
     def _load(self) -> dict[str, list[tuple[datetime, float]]]:
         try:
             raw = json.loads(self._path.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError:
             return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"budget ledger {self._path} is corrupt; refusing to run") from exc
         out: dict[str, list[tuple[datetime, float]]] = {}
         for principal, entries in raw.items():
             out[principal] = [(datetime.fromisoformat(at), float(bits)) for at, bits in entries]
@@ -91,16 +99,21 @@ class FileLedger:
             principal: [[at.isoformat(), bits] for at, bits in entries]
             for principal, entries in data.items()
         }
-        self._path.write_text(json.dumps(serializable))
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(serializable))
+        os.replace(tmp, self._path)
 
     def spent(self, principal: str, window_seconds: float | None, now: datetime) -> float:
         entries = self._load().get(principal, [])
         return sum(bits for at, bits in entries if _within_window(at, window_seconds, now))
 
     def record(self, principal: str, bits: float, at: datetime) -> None:
-        data = self._load()
-        data.setdefault(principal, []).append((at, bits))
-        self._save(data)
+        with open(self._path.with_suffix(".lock"), "w") as lock:
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_EX)  # serialize read-modify-write across processes
+            data = self._load()
+            data.setdefault(principal, []).append((at, bits))
+            self._save(data)
 
 
 def check_budget(
@@ -121,7 +134,7 @@ def check_budget(
             else f"within the last {policy.window_seconds:g}s"
         )
         reason = (
-            f"cumulative exit-bandwidth budget exceeded for principal '{principal}': "
+            f"cumulative exit-bandwidth budget exceeded for '{principal}': "
             f"{spent:.2f} bits already charged {window}, this run would add {requested_bits:.2f}, "
             f"over the {policy.max_exit_bits:.2f}-bit cap"
         )
