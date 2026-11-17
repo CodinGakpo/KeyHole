@@ -35,6 +35,12 @@ select = ["E", "F", "I", "UP", "B"]
 # str+Enum -> StrEnum changes str()/format() output of the status/schema enums; keep it explicit.
 ignore = ["UP042"]
 
+[tool.mypy]
+# boto3 ships no type information; it is an optional extra used only on the cloud path.
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "mcp", "mcp.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

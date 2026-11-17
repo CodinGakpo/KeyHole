@@ -19,6 +19,23 @@ jobs:
       - name: Install
         run: python -m pip install -e '.[dev]'
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src tests benchmarks
+      - name: Typecheck
+        run: python -m mypy src
+      - name: Install bubblewrap (local sandbox for the hostile suite)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - name: Unit + hostile tests
         run: python -m pytest -q
+      - name: Benchmarks (canary + leaderboard probing)
+        run: python benchmarks/canary.py && python benchmarks/leaderboard.py
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: fmt + validate
+        working-directory: infra/terraform/environments/dev
+        run: |
+          terraform fmt -check -recursive ../..
+          terraform init -backend=false -input=false
+          terraform validate

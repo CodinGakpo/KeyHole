@@ -1,13 +1,14 @@
 # Prefer the repo venv so demo targets work without activating it.
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
-.PHONY: help install test unit hostile lint fmt typecheck demo showtime showtime-dashboard lambda-zip clean
+.PHONY: help install test unit hostile lint fmt typecheck bench demo showtime showtime-dashboard lambda-zip clean
 
 help:
 	@echo "make install   - editable install with dev extras"
 	@echo "make test      - run all tests"
 	@echo "make unit      - unit tests only"
 	@echo "make hostile   - the marquee hostile exfiltration suite"
+	@echo "make bench     - canary + leaderboard-probing benchmarks (Keyhole vs a plain tool)"
 	@echo "make lint      - ruff check"
 	@echo "make fmt       - ruff format"
 	@echo "make demo      - run the local end-to-end demo"
@@ -28,13 +29,17 @@ hostile:
 	$(PYTHON) -m pytest -q tests/hostile
 
 lint:
-	$(PYTHON) -m ruff check src tests
+	$(PYTHON) -m ruff check src tests benchmarks
 
 fmt:
 	$(PYTHON) -m ruff format src tests
 
 typecheck:
 	$(PYTHON) -m mypy src
+
+bench:
+	$(PYTHON) benchmarks/canary.py
+	$(PYTHON) benchmarks/leaderboard.py
 
 demo:
 	$(PYTHON) scripts/demo.py
@@ -49,4 +54,5 @@ lambda-zip:
 	$(PYTHON) scripts/build_lambda.py
 
 clean:
-	rm -rf .pytest_cache .ruff_cache .mypy_cache **/__pycache__
+	rm -rf .pytest_cache .ruff_cache .mypy_cache
+	find . -name __pycache__ -type d -prune -not -path './.venv/*' -exec rm -rf {} +

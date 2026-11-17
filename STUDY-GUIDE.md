@@ -184,9 +184,12 @@ loose coercion would silently widen the exit (line 4). Subtlety at lines 116-127
 **closed** — undeclared properties are rejected (line 96).
 
 **Step 5 — bandwidth.** `schema/bandwidth.py:bandwidth_bits` (line 23). Enum → log₂(n) (line 33).
-Bounded int → log₂(span) (line 37). String → `max_length × log₂(charset size)` (line 48). Array →
-`max_items × bandwidth(items)` (line 54). Object → sum of children (line 58). Unbounded scalars fall
-back to 64 bits — **conservative: always overstates the channel, never understates** (line 9).
+Bounded int → log₂(span). String and array → log₂ of the number of sequences of *every* length up
+to the max (the length is part of the message), about `max × log₂(alphabet)`. Object → sum of
+children. Unbounded scalars are 64 bits, and validation holds them to 64 bits. The gate releases a
+value rebuilt from the schema, so `1` / `1.0` / `true` or key order cannot add hidden bits. A
+brute-force test counts every value the gate can release and checks it against the bound — it is
+what caught the six ways the first version understated the channel.
 `run_channel_bits` (line 68) adds the "not released" outcome: log₂(N + 1) per run — what the budget
 charges.
 

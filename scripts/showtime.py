@@ -199,7 +199,8 @@ def step_cleanroom() -> None:
     header(5, "The clean room",
            "Two companies. acme owns the data. partner-ai owns the code.\n"
            "The partner runs its code on acme's data and never receives the file.")
-    _, out = sbx("dataset", "add", DATA, "--owner", "acme")
+    _, out = sbx("dataset", "add", DATA, "--owner", "acme",
+                 "--max-bits-per-run", "4", "--budget-bits", "32")
     ds = field(out, "dataset")
     pause("acme grants partner-ai")
     _, out = sbx("dataset", "grant", ds, "--to", "partner-ai")

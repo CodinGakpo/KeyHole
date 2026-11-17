@@ -13,6 +13,8 @@ Requires the ``cloud`` extra (boto3). KMS returns a DER-encoded ECDSA signature;
 
 from __future__ import annotations
 
+from typing import Any
+
 from cryptography.hazmat.primitives import serialization
 
 ALGORITHM = "ecdsa-p256-sha256"
@@ -23,7 +25,7 @@ class KmsSigner:
 
     algorithm = ALGORITHM
 
-    def __init__(self, key_id: str, region: str | None = None, kms_client: object | None = None):
+    def __init__(self, key_id: str, region: str | None = None, kms_client: Any = None):
         # `key_id` may be a key id, alias, or ARN — whatever kms:Sign accepts.
         self.key_id = key_id
         if kms_client is not None:

@@ -39,12 +39,25 @@ themed list of future features lives in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCO
   real outcome goes to the owner's audit record), and every run is charged log₂(N + 1) bits,
   released or not. Proven by `test_exit_code_side_channel_is_closed`.
 - ✅ **Bounded `array` schema type** — list-shaped answers with a required `max_items`, so their
-  exit bandwidth (`max_items × item_bits`) is always finite and disclosed.
+  exit bandwidth is always finite and disclosed.
+- ✅ **Audit fixes** — a true bandwidth bound (canonical release, brute-force check), owner-set
+  per-dataset policy and budget, mock-data runs, agent MCP tools and Python API, bubblewrap local
+  sandbox, timing and crash channels closed, cloud control-plane hardening. See SECURITY.md.
+- ✅ **Cloud clean room** — datasets, grants and policy registered through the API (owner key);
+  dataset bytes loaded server-side; atomic per-dataset budget charged at admission.
+- ✅ **Benchmarks** — canary leakage and leaderboard probing against a plain code tool
+  (`make bench`).
 
 ## Next
 
-- **Authenticate the cloud API.** Opaque run status needs the owner-detail audit endpoint
-  (`GET /runs/{id}/audit`) to be owner-only; today the API has no authentication at all.
+- **Re-verify the cloud on AWS.** The API auth, S3 endpoint policy, separate in-task uids,
+  envelope validation and run deadline are unit-tested but not yet applied to a live stack. Run
+  `scripts/cloud_smoke.py` (now with DNS and foreign-bucket probes) before and after.
+- **Close DNS in the cloud if the probe shows it open** (Route 53 Resolver DNS Firewall allowlist).
+- **A live agent in the canary benchmark**, alongside the scripted one.
+- **A hosted-sandbox backend** (E2B or Modal) behind the executor seam, to show Keyhole as the
+  exit gate for the sandbox a team already uses. (Local bubblewrap and Docker backends ship.)
+- **Mock runs and rolling budget windows in the cloud.**
 
 Then, grouped in [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md): hardware-anchored attestation
 (Nitro), timing-channel mitigation, differential-privacy exit mode, wider/free-form exit opt-in,
