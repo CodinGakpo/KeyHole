@@ -9,6 +9,7 @@ a bandwidth argument (see :mod:`keyhole.schema.bandwidth`) rather than a content
 from __future__ import annotations
 
 import enum
+import math
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -49,6 +50,7 @@ class OutputSchema(BaseModel):
     choices: list[Any] | None = None
 
     # STRING
+    # Counted in characters when ``charset`` is given, otherwise in UTF-8 bytes.
     max_length: int | None = Field(default=None, ge=0)
     charset: str | None = None  # explicit set of allowed characters; None => any byte (256)
     pattern: str | None = None  # optional regex the string must fully match
@@ -72,6 +74,8 @@ class OutputSchema(BaseModel):
         if t in (SchemaType.INTEGER, SchemaType.NUMBER):
             forbid("choices", "max_length", "charset", "pattern",
                    "items", "max_items", "properties")
+            if any(b is not None and not math.isfinite(b) for b in (self.minimum, self.maximum)):
+                raise ValueError("minimum and maximum must be finite")
             if (
                 self.minimum is not None
                 and self.maximum is not None

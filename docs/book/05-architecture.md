@@ -4,7 +4,7 @@
 
 Keyhole has four moving parts:
 
-1. **Clients** — a CLI (`sbx`) and an MCP server (`run_confidential`), both thin wrappers over the
+1. **Clients** — a CLI (`sbx`) and an MCP server (`run_confidential_tool`), both thin wrappers over the
    same REST API.
 2. **Control plane** — a Lambda behind an API Gateway HTTP API. Validates requests, launches
    sandboxes, runs the exit gate, signs attestations, records audit.
@@ -12,7 +12,7 @@ Keyhole has four moving parts:
    volume, then the sandbox container (runs the untrusted code) under a read-only root filesystem.
    Egress is contained by the private subnet + run security group, not by an in-task sidecar (ch. 4).
 4. **State & storage** — DynamoDB (run state + append-only audit), S3 (code, data, schema, output,
-   attestation, data-flow log), ECR (images), KMS (encryption + attestation signing).
+   attestation, data-flow log; SSE-S3), ECR (images), KMS (attestation signing).
 
 ## A run, end to end
 
@@ -49,13 +49,13 @@ Control plane exit gate
         ▼
 GET /runs/{id}         → released output + attestation
 GET /runs/{id}/audit   → data-flow record
-sbx attest verify      → independently verify the attestation
+sbx verify            → independently verify the attestation
 ```
 
 ## Why each big choice
 
 - **Fargate, one task per run.** VM-level task isolation, per-second billing (a run costs fractions
-  of a cent), no hosts to manage. Cold start (~10–30 s) is acceptable for the base; warm pools are
+  of a cent), no hosts to manage. Cold start (~30–60 s measured) is acceptable for the base; warm pools are
   roadmap.
 - **Egress enforced at the network layer (not a same-task sidecar).** Containment is a private
   subnet with no NAT plus a run security group whose only egress is to AWS service endpoints. A

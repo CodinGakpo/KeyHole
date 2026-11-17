@@ -32,7 +32,8 @@ RED, GREEN, YELLOW, CYAN = "\033[31m", "\033[32m", "\033[33m", "\033[36m"
 
 def runs_to_steal() -> int:
     """Runs needed to drain the whole file through a 3-way enum exit."""
-    return math.ceil((ROOT / "examples/customers.csv").stat().st_size * 8 / math.log2(3))
+    # Per run the caller learns one of 3 labels or "not released": log2(3 + 1) = 2 bits.
+    return math.ceil((ROOT / "examples/customers.csv").stat().st_size * 8 / math.log2(3 + 1))
 
 
 def width() -> int:
@@ -198,7 +199,8 @@ def step_cleanroom() -> None:
     header(5, "The clean room",
            "Two companies. acme owns the data. partner-ai owns the code.\n"
            "The partner runs its code on acme's data and never receives the file.")
-    _, out = sbx("dataset", "add", DATA, "--owner", "acme")
+    _, out = sbx("dataset", "add", DATA, "--owner", "acme",
+                 "--max-bits-per-run", "4", "--budget-bits", "32")
     ds = field(out, "dataset")
     pause("acme grants partner-ai")
     _, out = sbx("dataset", "grant", ds, "--to", "partner-ai")
@@ -262,8 +264,24 @@ def finale() -> None:
     print()
 
 
+def reset_state() -> None:
+    """Wipe runs, datasets and the budget ledger, but keep the signing key.
+
+    A running `make showtime-dashboard` loads the public key once at startup; a fresh key per show
+    would make every new run fail verification there.
+    """
+    SHOW_HOME.mkdir(parents=True, exist_ok=True)
+    for child in SHOW_HOME.iterdir():
+        if child.name.startswith("dev-signing"):
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def main() -> int:
-    shutil.rmtree(SHOW_HOME, ignore_errors=True)
+    reset_state()
     print("\033[2J\033[H" if not AUTO else "")
     say("KEYHOLE", CYAN + BOLD)
     say("Run untrusted code on private data. Only a bounded, signed answer gets out.", BOLD)

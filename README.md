@@ -1,11 +1,12 @@
 # Keyhole
 
-**Let untrusted code read your private data — and let only a small, signed answer out.**
+**Let an AI agent answer questions about private data it never gets to see.**
 
-You can look through a keyhole; you can't carry the furniture out through it. Keyhole runs
-untrusted or AI-generated code on sensitive data, but the only thing that may leave is a value you
-declared in advance (a label, a score, a count) — sized in **bits**, enforced outside the code's
-reach, and recorded in a **signed receipt** anyone can verify.
+You can look through a keyhole; you can't carry the furniture out through it. The agent writes
+code; the code runs next to the data; the only thing that comes back is a typed answer (a label, a
+count, a score) no wider than the data owner allows — measured in **bits**, capped in total per
+dataset, and recorded in a **signed receipt**. Nobody reviews the code: the owner approves the
+*size of the answer* instead.
 
 ## The problem
 
@@ -21,17 +22,29 @@ table can walk out inside the answer.
 
 ## Why existing tools don't cover it
 
-| Approach | What it protects | Why it misses this case |
+| Approach | How it controls what leaves | Why it misses this case |
 |---|---|---|
-| Code sandboxes (E2B, Modal, AWS AgentCore) | the **host** from the code | output is returned unrestricted, so data leaks through it |
-| Confidential computing / TEEs (Nitro Enclaves, SGX) | data from the **operator** | the code inside the enclave can still return the data |
-| Data clean rooms | data from **queries** | restrict SQL-style analyses, not arbitrary code |
-| DLP / content scanning | known **patterns** in output | defeated by encrypting or encoding before emitting |
-| Differential privacy | individuals in **aggregates** | needs a statistical query model, not general code |
+| Agent sandboxes (E2B, Modal, Daytona, AgentCore) | network egress allowlists | whatever the code returns goes straight back into the agent's context |
+| Clean rooms with arbitrary Python (Databricks, Snowflake, Decentriq) | humans approve each notebook or function | review does not scale to code an agent wrote seconds ago |
+| PySyft | the data owner reviews each code request | same: a person in the loop per request |
+| Agent information-flow control (CaMeL, FIDES) | labels and a quarantined model | no quantitative bound on what an implicit flow can carry |
+| DLP / content scanning | known patterns in output | defeated by encoding before emitting |
+| Differential privacy | individuals in aggregates | needs a statistical query model, not general code |
 
 Keyhole takes a known idea — bounded information leakage, from information-flow research and the
-confinement problem (Lampson, 1973) — and makes it a practical primitive for the case none of these
-cover: **arbitrary code, on private data, with a receipt.**
+confinement problem (Lampson, 1973) — and makes it a practical layer for the case none of these
+cover: **arbitrary code, no human review, a number for what left, and a receipt.** It sits on top
+of a sandbox rather than competing with one: the sandbox keeps the code in; Keyhole decides what
+comes out.
+
+## Measured
+
+`make bench` runs both, offline and reproducibly:
+
+| Benchmark | Plain code-execution tool | Keyhole |
+|---|---|---|
+| **Canaries** — 4 analytic questions over a 500-row table seeded with 1,000 canaries; each asked by honest code and by prompt-injected code | 4/4 correct; **4,000 canaries** reached the agent; 1.17M bits returned | 4/4 correct; **0 canaries**; 41 bits returned |
+| **Leaderboard probing** — recover 64 hidden test labels by flipping one prediction per scoring query | 64/64 recovered in 65 queries | **4/64**, then refused (32-bit budget, shared by every identity) |
 
 ## The idea in one number
 
@@ -52,14 +65,16 @@ sbx run examples/exfil.py --data customers.csv=examples/customers.csv \
 
 On top of that one idea:
 
-- **A bit budget per caller.** Asking many small questions could add up, so each caller has a
-  cumulative cap on released bits (`--principal mallory --budget-bits 8`).
-- **A signed receipt for every run.** The attestation binds the hashes of the code, data and schema,
-  the exact output, and who was involved. Change one field and verification fails.
-- **A locked-down cloud.** On AWS the code runs on Fargate in a subnet with no internet route, an
-  empty IAM role and a read-only filesystem; the receipt is signed by a KMS key that never leaves KMS.
-- **Two-party clean room.** A data owner grants a partner the right to run code on a dataset the
-  partner never receives.
+- **The owner sets the policy, on the dataset.** The widest answer one run may carry and the total
+  that may ever leave. A schema wider than the cap is refused before anything runs; the budget is
+  the dataset's, shared by every caller, so a new identity buys nothing.
+- **Mock data for writing the code.** The owner attaches stand-in rows of the same shape. Runs on
+  the mock return full output and tracebacks; runs on the real data return only the answer.
+- **A signed receipt for every run.** It binds the hashes of the code, data and schema, the exact
+  output, the bits charged and the running total, who was involved, and which sandbox ran the code.
+- **A real box.** Locally, code runs under bubblewrap: no network, your home and Keyhole's signing
+  key hidden (or in a locked-down Docker container with `KEYHOLE_SANDBOX=docker`). On AWS it runs on Fargate in a subnet with no internet route, an empty IAM role and an
+  S3 endpoint policy that admits only Keyhole's own bucket; receipts are signed by KMS.
 
 ## See it
 
@@ -85,21 +100,27 @@ flowchart LR
 
 The code runs in one trust domain; the **exit gate** runs in another. The code has full freedom
 inside the box and no authority over the gate, so it can't change the schema it's judged by. The
-gate checks, in order: does the output fit the schema → how many bits could it carry → does a
-secondary DLP scan flag it → is the caller within budget → release, and sign a receipt either way.
+gate checks, in order: can the caller afford this run → does the output fit the schema → how many
+bits could it carry → does a secondary DLP scan flag it → release. It charges the budget and signs
+a receipt either way.
 
 ## What it guarantees — and what it doesn't
 
 Keyhole never claims "zero leakage": the confinement problem proves that's impossible for code that
 can see the data. It claims a **disclosed ceiling**.
 
-- **Guaranteed:** a released answer carries at most the schema's bandwidth; anything that doesn't
-  fit is withheld; every run is signed and tamper-evident.
-- **Bounded, not zero:** code can choose *which* allowed answer to give, leaking up to the schema's
-  bits per run. The per-caller budget caps the total of released answers.
-- **Known gap:** run *status* is a side channel. A failed run reports its exit code and is not
-  charged to the budget, so code could signal through how it fails. Fix planned: collapse every
-  non-release outcome into one opaque status and charge every run.
+- **Guaranteed:** a released answer carries at most the schema's bandwidth — the gate releases a
+  value rebuilt from the schema, never the code's own object, and a brute-force test counts every
+  value it can release to check the bound; anything that doesn't fit is withheld; every run is
+  signed and tamper-evident.
+- **Bounded, not zero:** code can choose *which* allowed answer to give — or to give none. Every
+  non-release outcome looks identical to the caller (crashes, timeouts and exit codes go only to the
+  data owner's audit log), so one run reveals at most log₂(N + 1) bits: 2 bits for three labels.
+  The budget charges every run that amount, released or not.
+- **Found and closed:** an audit of the first version found the bound could be beaten six ways
+  (unbounded integers, multi-byte strings, `1` vs `1.0` vs `true`, array length, key order, NaN),
+  that clean-room providers chose their own schema, and that run duration was returned to the
+  caller. Each now has a hostile test. See [`SECURITY.md`](SECURITY.md).
 - **Out of scope:** timing side channels, what a legitimate answer itself reveals, and breaking
   AWS's own isolation. See [`SECURITY.md`](SECURITY.md).
 
@@ -115,25 +136,52 @@ The rule of thumb: Keyhole fits when **the data is more sensitive than the answe
 
 ## Usage
 
-### Multi-party clean room
+### From an AI agent (MCP)
+
+The data owner registers a dataset with its exit policy and grants the agent:
 
 ```bash
-# Data owner: register a dataset, then grant a specific code provider.
-sbx dataset add customers.csv=./customers.csv --owner acme      # → ds-1eebc2b917c4
-sbx dataset grant ds-1eebc2b917c4 --to partner-ai               # → grant-…
+sbx dataset add customers.csv=./customers.csv --owner acme \
+    --max-bits-per-run 12 --budget-bits 256 \
+    --describe "customers: name,email,ssn,region,spend,churned" \
+    --mock customers.csv=./customers.mock.csv                     # → ds-1eebc2b917c4
+sbx dataset grant ds-1eebc2b917c4 --to agent
 
-# Code provider: run by dataset id + grant. They never receive the bytes.
-sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… \
-    --principal partner-ai --schema schemas/label.json
-# → succeeded   output: "spam"   attestation binds {acme, partner-ai, ds-1eebc2b917c4}
-
-# Anyone else holding the same token is refused before anything runs:
-sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… --principal intruder …
-# → refused: grant does not authorize provider 'intruder'
+pip install -e '.[mcp]'
+claude mcp add keyhole -- keyhole-mcp                             # Claude Code
 ```
 
-This is a local MVP of the model: grants are unguessable bearer tokens (production would sign and
-time-box them), and owner/provider separation is enforced by the control plane rather than by IAM.
+The agent gets three tools: `list_datasets` (description, mock rows, budget left), `run` with
+`on="mock"` (full output, free) or `on="real"` (the bounded answer only), and
+`run_confidential_tool`, which takes data inline from the agent — useful only for bounding what
+comes back from processing content the agent does not trust. Any other MCP host:
+`{ "mcpServers": { "keyhole": { "command": "keyhole-mcp", "env": { "KEYHOLE_PRINCIPAL": "agent" } } } }`
+
+From Python, without MCP:
+
+```python
+import keyhole
+keyhole.list_datasets(principal="agent")
+keyhole.run("ds-1eebc2b917c4", code, {"type": "enum", "choices": ["north", "south"]},
+            principal="agent", on="mock")   # then on="real"
+```
+
+### Two-party clean room
+
+The same commands, with a partner as the code provider:
+
+```bash
+sbx run classify.py --dataset ds-1eebc2b917c4 --grant grant-… \
+    --principal partner-ai --schema schemas/label.json [--on mock]
+# → succeeded   output: "spam"   budget: 2.00/256.00 bits of this dataset (all providers)
+#   attestation binds {acme, partner-ai, ds-1eebc2b917c4}
+
+# A schema wider than the owner allows is refused before anything runs:
+# → refused: schema could carry 480000.01 bits per run; the data owner allows at most 12.00
+```
+
+Grants are unguessable bearer tokens (production would sign and time-box them), and owner/provider
+separation is enforced by the control plane rather than by IAM.
 
 ### Verify a receipt
 
@@ -143,23 +191,12 @@ sbx verify att.json                         # VALID   (local ed25519 dev key)
 sbx verify att.json --pubkey kms.pem        # VALID   (cloud: ecdsa-p256 via KMS)
 ```
 
-### From an AI agent (MCP)
-
-The MCP server exposes `run_confidential_tool`: an agent supplies code, data and a narrow schema,
-and gets back only the conforming value plus an attestation id — the same exit gate as everywhere.
-
-```bash
-pip install -e '.[mcp]'
-claude mcp add keyhole -- keyhole-mcp       # Claude Code
-```
-
-Any other MCP host: `{ "mcpServers": { "keyhole": { "command": "keyhole-mcp" } } }`
-
 ### Deploy to your AWS account
 
 ```bash
 infra/terraform/environments/dev/stack.sh up     # build, terraform apply, push sandbox image
 export KEYHOLE_API_ENDPOINT=…                    # printed by `up`
+export KEYHOLE_API_KEY=…                         # from .env; the API refuses requests without it
 sbx run classify.py --data emails.csv=./emails.csv --schema schemas/label.json \
     --save-attestation att.json                  # submit → poll → released + KMS-signed
 sbx verify att.json --pubkey /tmp/kms.pem
@@ -168,7 +205,15 @@ infra/terraform/environments/dev/stack.sh down   # back to ≈ $0
 
 Lambda + API Gateway control plane, DynamoDB audit log, Fargate sandbox, KMS signing key. About
 $0.03/hour while up (VPC endpoints), ≈ $0 when torn down. `stack.sh` reads AWS keys from the
-repo-root `.env` (`AWS_ACCESS_KEY`, `AWS_SECRET_KEY`).
+repo-root `.env` (`AWS_ACCESS_KEY`, `AWS_SECRET_KEY`), plus `KEYHOLE_API_KEY` for callers and
+`KEYHOLE_OWNER_KEY` for owner routes (registering datasets and grants, reading the audit).
+
+The clean room works the same way in the cloud: `sbx dataset add … --cloud` and
+`sbx dataset grant … --cloud` (owner key) register the dataset and its policy with the control
+plane; `sbx run --dataset … --grant …` (caller key) runs against it. The control plane loads the
+bytes from S3 itself, refuses schemas over the cap, and charges the dataset's budget with one
+atomic DynamoDB update before launching anything. Cloud budgets are cumulative (no rolling
+window), and mock runs are local-only: callers get the mock rows from `GET /datasets/{id}`.
 
 ### Dashboard
 
@@ -179,13 +224,16 @@ it to verify.
 
 ## Status
 
-- **Local:** full pipeline — typed exit, bandwidth accounting, exit gate, DLP backstop, ed25519
-  attestation, budget, clean room, MCP server, dashboard.
-- **Cloud:** deployed and verified end to end on real AWS — honest answer released and KMS-signed,
-  exfiltrator withheld, sandbox internet probe blocked, attestation VALID against the KMS public key.
-- **Adversarial:** `tests/hostile/` attacks every claim — bulk dump, encoding into a bounded string,
-  stdout, fork bomb, memory hog, drip across runs, clean-room intruder and cross-principal exfil,
-  attestation tamper.
+- **Local:** full pipeline — owner-set policy, mock runs, typed exit, bandwidth accounting, exit
+  gate, per-dataset budget, ed25519 receipts, bubblewrap sandbox, MCP server, Python API, dashboard.
+- **Cloud:** deployed and verified end to end on real AWS (honest answer released and KMS-signed,
+  exfiltrator withheld, internet probe blocked). Since then: API auth, an S3 endpoint policy,
+  separate uids inside the task, result-envelope validation and a run deadline. These are
+  unit-tested and the image runner is tested in Docker, but **not yet re-verified on AWS**; the
+  smoke test now also probes DNS and foreign-bucket writes.
+- **Adversarial:** `tests/hostile/` attacks every claim — bulk dump, every way to widen the bound,
+  run-status and timing side channels, crash paths, drip across runs, sandbox escapes, clean-room
+  wide-schema and identity-switching, attestation tamper.
 
 Next: see [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md).
 
@@ -194,12 +242,13 @@ Next: see [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md).
 | Path | What |
 |---|---|
 | `src/keyhole/schema/` | The narrow exit and its bandwidth accounting — the core guarantee. |
-| `src/keyhole/controlplane/gate.py` | The exit gate: validate → bandwidth → DLP → budget → release → sign. |
+| `src/keyhole/controlplane/gate.py` | The exit gate: budget → validate → bandwidth → DLP → release → charge → sign. |
 | `src/keyhole/attest/` | Signed, verifiable attestations (ed25519 locally, KMS in the cloud). |
 | `src/keyhole/executor/` | Local executor matching the cloud contract. |
 | `src/keyhole/cli/`, `src/keyhole/mcp/` | CLI (`sbx`) and MCP server. |
 | `infra/terraform/` | AWS deploy (no NAT; ≈ $0 idle). |
 | `tests/hostile/` | Hostile scripts that try to exfiltrate — and can't. |
+| `benchmarks/` | Canary and leaderboard-probing benchmarks against a plain code tool. |
 | `docs/book/` | The decision book: every design choice and why. |
 | `STUDY-GUIDE.md`, `DEMO.md` | Interview prep and the live-demo runbook. |
 
@@ -207,7 +256,8 @@ Next: see [`docs/FUTURE-SCOPE.md`](docs/FUTURE-SCOPE.md).
 
 ```bash
 python -m pip install -e '.[dev]'
-make test        # unit + hostile suite
+make test        # unit + hostile suite (install bubblewrap for the sandbox tests)
+make bench       # canary + leaderboard benchmarks
 make lint
 sbx doctor       # check your environment
 ```

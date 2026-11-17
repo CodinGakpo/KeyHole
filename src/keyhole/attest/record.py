@@ -29,11 +29,12 @@ class Attestation(BaseModel):
     schema_sha256: str
     output_sha256: str | None
     output: Any | None  # the exact released value, or None if nothing was released
-    exit_bandwidth_bits: float
-    egress_attempts: int
-    egress_denied: int
+    exit_bandwidth_bits: float  # the widest a released answer could be
+    run_channel_bits: float  # what this run was charged: the answer, or "not released"
+    cumulative_exit_bits: float | None = None  # total charged to this budget so far, if budgeted
     exit_code: int | None
     released: bool
+    isolation: str = "none"  # the sandbox the code ran in; "none" = exit gate only
     # Clean-room identities (who ran whose data). Single-principal runs leave owner/dataset None.
     data_owner: str | None = None
     code_provider: str | None = None
@@ -64,10 +65,11 @@ def build_claims(att: Attestation) -> dict[str, Any]:
         "output_sha256": att.output_sha256,
         "output": att.output,
         "exit_bandwidth_bits": att.exit_bandwidth_bits,
-        "egress_attempts": att.egress_attempts,
-        "egress_denied": att.egress_denied,
+        "run_channel_bits": att.run_channel_bits,
+        "cumulative_exit_bits": att.cumulative_exit_bits,
         "exit_code": att.exit_code,
         "released": att.released,
+        "isolation": att.isolation,
         "data_owner": att.data_owner,
         "code_provider": att.code_provider,
         "dataset_id": att.dataset_id,

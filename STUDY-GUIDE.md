@@ -92,7 +92,8 @@ Every schema has a computable **upper bound in bits** on what one conforming val
 
 ### 2.4 The cumulative budget (drip defense)
 One run leaks ≤ N bits; 10,000 runs leak 10,000 × N. A **per-principal ledger** caps the total
-released bits across runs. Code: `src/keyhole/controlplane/budget.py`. (Its known gap: Part 7.)
+bits a caller can learn across runs — every run is charged log₂(N + 1), released or not (Part 7
+explains why). Code: `src/keyhole/controlplane/budget.py`.
 
 ### 2.5 The attestation
 A signed record binding the code hash, data hash, schema hash, the exact output, the bandwidth, the
@@ -113,15 +114,15 @@ offline; tampering any field breaks the signature. Code: `src/keyhole/attest/`.
  │        │                                                               │
  │        ▼                                                               │
  │   ╔══════════════ THE EXIT GATE  (gate.py) ══════════════╗            │
- │   ║ 1. validate output vs schema   → fail ⇒ WITHHELD      ║            │
- │   ║ 2. compute exit bandwidth (bits)                      ║            │
- │   ║ 3. secondary DLP backstop      → hit  ⇒ WITHHELD      ║            │
- │   ║ 4. cumulative budget check     → over ⇒ WITHHELD      ║            │
- │   ║ 5. else RELEASE the value                             ║            │
+ │   ║ 1. cumulative budget check     → over ⇒ WITHHELD      ║            │
+ │   ║ 2. validate output vs schema   → fail ⇒ WITHHELD      ║            │
+ │   ║ 3. compute exit bandwidth (bits)                      ║            │
+ │   ║ 4. secondary DLP backstop      → hit  ⇒ WITHHELD      ║            │
+ │   ║ 5. else RELEASE; charge the budget either way         ║            │
  │   ║ 6. build + SIGN attestation (released OR withheld)    ║            │
  │   ╚═══════════════════════════════════════════════════════╝           │
  │        │                                                               │
- │        ▼   RunResult + Attestation + AuditRecord                       │
+ │        ▼   RunResult (caller, opaque) + Attestation + AuditRecord (owner)│
  └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -131,8 +132,8 @@ control plane). The code has *total freedom inside the box* and *zero authority 
 That's why the attacker can't "just change the schema" — it's on the wrong side of the boundary.
 
 **The key invariant:** the *only* channel out of the box is the file named by the `KEYHOLE_OUTPUT`
-env var. stdout, stderr, temp files, memory — none of them leave. (Run *status* is the exception —
-see Part 7.)
+env var. stdout, stderr, temp files, memory — none of them leave. Run *status* used to be a second
+channel; it's now opaque to the caller (Part 7).
 
 **Be precise about local vs cloud.** Locally the code is an rlimited subprocess and *can* reach the
 network; the local run demonstrates the exit gate. Network containment is the cloud layer's job
@@ -160,18 +161,22 @@ code-provider identity the budget is keyed on). It's the *shared contract* every
 
 The executor **does not judge** the output. Judging is the gate's job.
 
-**Step 3 — the exit gate.** `controlplane/gate.py:run_exit_gate` (line 51). Read it top to bottom;
-the ordering *is* the thesis (docstring, line 4). It hashes code/data/schema (lines 71-73), counts
+**Step 3 — the exit gate.** `controlplane/gate.py:run_exit_gate` (line 61). Read it top to bottom;
+the ordering *is* the thesis (docstring, line 4). It hashes code/data/schema (lines 83-85), counts
 egress attempts, then the decision cascade:
-- timed out? → `TIMEOUT` (line 91)
-- non-zero exit? → `FAILED` (line 94)
-- no output file? → `FAILED` (line 97)
-- output bigger than `max_output_bytes`? → `WITHHELD` (line 100)
-- not valid JSON? → `WITHHELD` (line 109)
-- **doesn't match the schema?** → `WITHHELD` (line 114) ← *the exfiltrator's fate*
-- DLP backstop flags a secret/PII? → `WITHHELD` (line 123)
-- over cumulative budget? → `WITHHELD` (line 129)
-- **else → `SUCCEEDED`, released** (line 136), and the ledger is charged (line 141).
+- caller can't afford the run? → `WITHHELD`, whatever the code did (line 110)
+- timed out? → `TIMEOUT` (line 114)
+- non-zero exit? → `FAILED` (line 117)
+- no output file? → `FAILED` (line 120)
+- output bigger than `max_output_bytes`? → `WITHHELD` (line 123)
+- not valid JSON? → `WITHHELD` (line 132)
+- **doesn't match the schema?** → `WITHHELD` (line 137) ← *the exfiltrator's fate*
+- DLP backstop flags a secret/PII? → `WITHHELD` (line 146)
+- **else → `SUCCEEDED`, released** (line 153).
+
+Then the ledger is charged for the run, released or not (line 160), and the **caller view** is
+built (line 168): `SUCCEEDED` + value, or `WITHHELD` + the fixed `NOT_RELEASED` reason (line 51).
+TIMEOUT / FAILED and the detailed reason only reach the owner's `AuditRecord`.
 
 **Step 4 — validation.** `schema/validate.py:validate_output` (line 33). **Strict, no coercion** —
 loose coercion would silently widen the exit (line 4). Subtlety at lines 116-127: a Python `bool` is
@@ -179,17 +184,22 @@ loose coercion would silently widen the exit (line 4). Subtlety at lines 116-127
 **closed** — undeclared properties are rejected (line 96).
 
 **Step 5 — bandwidth.** `schema/bandwidth.py:bandwidth_bits` (line 23). Enum → log₂(n) (line 33).
-Bounded int → log₂(span) (line 37). String → `max_length × log₂(charset size)` (line 48). Array →
-`max_items × bandwidth(items)` (line 54). Object → sum of children (line 58). Unbounded scalars fall
-back to 64 bits — **conservative: always overstates the channel, never understates** (line 9).
+Bounded int → log₂(span). String and array → log₂ of the number of sequences of *every* length up
+to the max (the length is part of the message), about `max × log₂(alphabet)`. Object → sum of
+children. Unbounded scalars are 64 bits, and validation holds them to 64 bits. The gate releases a
+value rebuilt from the schema, so `1` / `1.0` / `true` or key order cannot add hidden bits. A
+brute-force test counts every value the gate can release and checks it against the bound — it is
+what caught the six ways the first version understated the channel.
+`run_channel_bits` (line 68) adds the "not released" outcome: log₂(N + 1) per run — what the budget
+charges.
 
 **Step 6 — attestation.** `attest/record.py`: the `Attestation` model (line 15). The **signed
 claims** are exactly the fields in `build_claims` (line 55). The envelope (`algorithm`, `key_id`,
 `signature`) is not signed — it carries the signature. Signed via `attest/sign.py:sign_attestation`
 (line 80): canonical JSON bytes → `signer.sign()`.
 
-**Step 7 — the result.** `GateOutcome` = `RunResult` (what the caller sees) + `Attestation` +
-`AuditRecord` (the append-only trail).
+**Step 7 — the result.** `GateOutcome` = `RunResult` (the caller's opaque view) + `Attestation` +
+`AuditRecord` (the owner's full view and append-only trail).
 
 > Rehearse this as a 2-minute spoken walk. Steps 2→3→4 cover 70% of any code question.
 
@@ -205,7 +215,7 @@ quietly under-constrained** (under-constrained = wide exit). Guardrails: a strin
 `MAX_OBJECT_PROPERTIES = 16` (lines 18/111). This is where "narrow" is *enforced*.
 
 ### 5.2 The DLP backstop (`dlp/`)
-`scan_secrets` + `scan_pii` run on the *serialized conforming output* (gate.py:121). It's a
+`scan_secrets` + `scan_pii` run on the *serialized conforming output* (gate.py:144). It's a
 *secondary* backstop, **not** the guarantee — it catches a schema wide enough to hold, say, a card
 number. Never call DLP the primary defense: content scanning is exactly what Keyhole argues against
 relying on. (Book ch. 3/4.)
@@ -216,11 +226,11 @@ CPU seconds (line 29), file size (line 33), and **`RLIMIT_NPROC = 256` against f
 35). Defense in depth — the *primary* resource ceiling in the cloud is Fargate task sizing.
 
 ### 5.4 Budget / drip defense (`controlplane/budget.py`)
-`BudgetPolicy(max_exit_bits, window_seconds)` (line 24); `window_seconds=None` means forever.
-`check_budget` (line 105) compares `spent + requested` against the cap. **Only released runs spend
-budget** (line 10) — which is exactly the gap in Part 7. Two ledgers: `InMemoryLedger` (line 53) and
-`FileLedger` (line 67, JSON under `~/.keyhole`). `FileLedger` **fails open** on a corrupt file (line
-72) — a best-effort guardrail, not a signed record. Know it.
+`BudgetPolicy(max_exit_bits, window_seconds)` (line 26); `window_seconds=None` means forever.
+`check_budget` (line 106) compares `spent + requested` against the cap. **Every admitted run spends
+budget, released or not** (line 8) — "was it released?" is information too (Part 7). Two ledgers:
+`InMemoryLedger` (line 54) and `FileLedger` (line 68, JSON under `~/.keyhole`). `FileLedger` **fails
+open** on a corrupt file (line 82) — a best-effort guardrail, not a signed record. Know it.
 
 ### 5.5 Attestation & verification (`attest/`)
 Two signers behind one `Signer` protocol (`sign.py:29`):
@@ -304,19 +314,35 @@ Every security claim ships with a hostile test that tries to break it (`tests/ho
 | **Clean room: cross-principal** | granted provider dumps the data | same bandwidth bound → WITHHELD |
 | **Tamper attestation** | edit a signed field | signature INVALID |
 
-`make hostile` runs them; `make test` → **90 passed, 2 skipped**.
+`make hostile` runs them; `make test` → **91 passed, 2 skipped**.
 
-### The hole: run status is a side channel
+### The hole I found — and closed: run status was a side channel
 
-The budget charges only *released* runs (`gate.py:140`). But a failed run tells the caller its exit
-code (`gate.py:96`: `"code exited with status {exit_code}"`). Exit codes span 0–255 — about
-**8 bits per run, never charged, with no limit on runs.** Malicious code can exit with the next byte
-of the file; ~414 runs drain the example dataset, even after the budget reports "exhausted".
-Released-vs-withheld and timeout-vs-not are smaller versions of the same channel.
+**The bug.** The budget only charged *released* runs, and a failed run told the caller its exit code
+(`"code exited with status {exit_code}"`). Exit codes span 0–255 — about **8 bits per run, never
+charged, with no limit on runs.** Code could exit with the next byte of the file; ~414 runs would
+drain the example dataset, even after the budget said "exhausted". Timeout-vs-crash and the
+validation messages (which echoed out-of-range values and lengths) were smaller versions of the same
+channel.
 
-**The fix (planned):** collapse every non-release outcome into one opaque `withheld` status with no
-detail returned to the caller (details stay in the owner's audit log), and charge **every** run.
-The honest per-run bound then becomes log₂(choices + 1) — the +1 is "not released".
+**The fix.**
+- **Caller view vs owner view.** The caller's `RunResult`, the attestation and the MCP reply now say
+  only "released + value" or one fixed `withheld` reason (`gate.py`, `NOT_RELEASED`). The real
+  status, reason and exit code go to the owner's `AuditRecord`, which the dashboard shows.
+- **Charge every run.** One run reveals one of N answers *or* "not released", so the honest bound is
+  log₂(N + 1) — `schema/bandwidth.py:run_channel_bits`. For three labels that's **2 bits**, not
+  1.58. The budget charges it on every admitted run, released or not.
+- **Budget first.** Once a caller can't afford a run, it's withheld whatever the code does, so an
+  exhausted caller learns nothing. That decision depends only on the caller's own history.
+
+**The proof.** `test_exit_code_side_channel_is_closed` exits with secret bytes and fails in several
+other ways, and asserts the caller sees one identical outcome for all of them while the audit sees
+the real exit codes. Run against the old gate, the same attack produced **8 distinct caller views
+out of 8 runs**; now it produces 1.
+
+**The honest residue.** The cloud API has no authentication, so `GET /runs/{id}/audit` (the owner
+view) is reachable by anyone with the URL — owner-only access needs auth. Timing remains out of
+scope.
 
 **How to tell it:** *"I found a hole in my own drip defense: failure codes were an uncharged side
 channel — 8 bits a run. I closed it by making every non-release outcome look identical and charging
@@ -359,7 +385,8 @@ egress verdict and the clean-room identities. Anyone with the public key verifie
 Tamper any field → INVALID.
 
 **Q7. "What's the weakest part / what would you build next?"**
-(1) The status side channel (Part 7) — and how I'd close it. (2) The attestation trusts my control
+(1) Authentication on the cloud API, so the owner-detail audit endpoint is owner-only (it's what
+keeps run status opaque in the cloud). (2) The attestation trusts my control
 plane; signing inside a **Nitro Enclave** makes it hardware-anchored. (3) Clean-room grants should
 be signed and time-boxed, with IAM-level separation.
 
@@ -382,8 +409,10 @@ usable primitive for arbitrary, AI-generated code: a declared-width exit enforce
 trust domain, a cumulative bit budget, and a signed receipt — deployable into your own AWS account.
 
 **Q12. "Can the code leak through *how* it fails?"**
-Yes, today — and I found it myself (Part 7). Exit codes are an uncharged ~8-bit channel per run. The
-fix: one opaque non-release status and charge every run, giving log₂(choices + 1) bits per run.
+It could — I found that myself and closed it (Part 7). Exit codes were an uncharged ~8-bit channel
+per run. Now every non-release outcome looks identical to the caller and every run is charged
+log₂(N + 1) bits; a hostile test exits with secret bytes and sees one opaque outcome. The remaining
+caveat: the cloud audit endpoint needs auth to be owner-only.
 
 ---
 
@@ -395,8 +424,8 @@ make showtime-dashboard    # terminal 2 — http://127.0.0.1:8787, same runs
 ```
 
 Six beats, each a real `sbx` command: **(1)** data vs exit — 3,312 bits vs 1.58; **(2)** honest code
-→ RELEASED; **(3)** malicious code → WITHHELD; **(4)** drip attack — budget meter fills, run 6
-refused; **(5)** clean room — partner runs, intruder refused; **(6)** receipt VALID → tamper one
+→ RELEASED; **(3)** malicious code → WITHHELD; **(4)** drip attack — budget meter fills at 2 bits a
+run, run 5 refused; **(5)** clean room — partner runs, intruder refused; **(6)** receipt VALID → tamper one
 field → INVALID. Rehearse with `make showtime ARGS=--auto`. Full runbook: `DEMO.md`.
 
 Let the visual land before pressing Enter — beats 1 and 3 are where people get it. Don't deploy the
@@ -434,9 +463,9 @@ walk the Terraform.
 - [ ] Place Keyhole against sandboxes, TEEs, clean rooms, DLP and differential privacy in one line each.
 - [ ] Explain the confinement problem and why you *don't* claim zero leak.
 - [ ] Compute the bandwidth of a 3-way enum, an int in [0,255], a 10-char hex string.
-- [ ] Name the gate order (validate → bandwidth → DLP → budget → release → sign).
+- [ ] Name the gate order (budget → validate → bandwidth → DLP → release → charge → sign).
 - [ ] Explain why the attacker can't change the schema (trust-domain separation).
-- [ ] Explain the drip attack, the budget, **and the status side channel + its fix.**
+- [ ] Explain the drip attack, the budget, **and the status side channel you found and closed.**
 - [ ] Explain how egress is *actually* blocked and the awsvpc-sidecar gotcha.
 - [ ] Explain what the attestation signs and how tampering is detected.
 - [ ] Explain the clean-room model and what the attestation binds.

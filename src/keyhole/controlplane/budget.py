@@ -5,14 +5,16 @@ nothing about *accumulation*: an adversary who calls the box N times, each withi
 leak N x bandwidth bits over time. This module bounds the total, per caller, over a window.
 
 Pure policy (no cloud dependency), like :mod:`keyhole.controlplane.quotas`, so the rules are
-unit-testable. Only *released* runs spend budget — a withheld run leaks nothing, so it charges 0.
-On release we charge the schema's conservative upper bound (``bandwidth_bits``), matching the
+unit-testable. *Every* admitted run spends budget, released or not: whether a run was released is
+itself information, so a withheld run is not free. Each run is charged ``run_channel_bits`` —
+log2(N + 1) for N conforming values plus the one opaque "not released" outcome — matching the
 "overstate the channel, never understate it" philosophy of the bandwidth accounting.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,10 +22,15 @@ from typing import Protocol
 
 from keyhole.common.models import utcnow
 
+try:
+    import fcntl  # POSIX only
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class BudgetPolicy:
-    """A cap on released exit-bits per principal. ``window_seconds=None`` => cumulative forever."""
+    """A cap on charged exit-bits per principal. ``window_seconds=None`` => cumulative forever."""
 
     max_exit_bits: float
     window_seconds: float | None = None
@@ -38,7 +45,7 @@ class BudgetDecision:
 
 
 class Ledger(Protocol):
-    """Records released exit-bits per principal and reports the spend within a window."""
+    """Records charged exit-bits per principal and reports the spend within a window."""
 
     def spent(self, principal: str, window_seconds: float | None, now: datetime) -> float: ...
     def record(self, principal: str, bits: float, at: datetime) -> None: ...
@@ -68,8 +75,8 @@ class FileLedger:
     """JSON-file-backed ledger so spend accumulates across separate CLI processes.
 
     Stored under the ``~/.keyhole`` state dir (see :func:`keyhole.common.config.home_dir`). A
-    missing or corrupt file is treated as an empty ledger — the budget is a best-effort guardrail,
-    not a signed record, so it fails open to "no spend yet" rather than crashing a run.
+    missing file is an empty ledger; a corrupt one raises, so runs are refused rather than
+    silently handed a fresh budget. Writes replace the file atomically under a lock.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -78,8 +85,10 @@ class FileLedger:
     def _load(self) -> dict[str, list[tuple[datetime, float]]]:
         try:
             raw = json.loads(self._path.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
+        except FileNotFoundError:
             return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"budget ledger {self._path} is corrupt; refusing to run") from exc
         out: dict[str, list[tuple[datetime, float]]] = {}
         for principal, entries in raw.items():
             out[principal] = [(datetime.fromisoformat(at), float(bits)) for at, bits in entries]
@@ -90,16 +99,21 @@ class FileLedger:
             principal: [[at.isoformat(), bits] for at, bits in entries]
             for principal, entries in data.items()
         }
-        self._path.write_text(json.dumps(serializable))
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(serializable))
+        os.replace(tmp, self._path)
 
     def spent(self, principal: str, window_seconds: float | None, now: datetime) -> float:
         entries = self._load().get(principal, [])
         return sum(bits for at, bits in entries if _within_window(at, window_seconds, now))
 
     def record(self, principal: str, bits: float, at: datetime) -> None:
-        data = self._load()
-        data.setdefault(principal, []).append((at, bits))
-        self._save(data)
+        with open(self._path.with_suffix(".lock"), "w") as lock:
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_EX)  # serialize read-modify-write across processes
+            data = self._load()
+            data.setdefault(principal, []).append((at, bits))
+            self._save(data)
 
 
 def check_budget(
@@ -109,7 +123,7 @@ def check_budget(
     requested_bits: float,
     now: datetime | None = None,
 ) -> BudgetDecision:
-    """Decide whether releasing ``requested_bits`` for ``principal`` stays within the budget."""
+    """Decide whether charging ``requested_bits`` to ``principal`` stays within the budget."""
     now = now or utcnow()
     spent = ledger.spent(principal, policy.window_seconds, now)
     remaining = policy.max_exit_bits - spent
@@ -120,8 +134,8 @@ def check_budget(
             else f"within the last {policy.window_seconds:g}s"
         )
         reason = (
-            f"cumulative exit-bandwidth budget exceeded for principal '{principal}': "
-            f"{spent:.2f} bits already released {window}, this run would add {requested_bits:.2f}, "
+            f"cumulative exit-bandwidth budget exceeded for '{principal}': "
+            f"{spent:.2f} bits already charged {window}, this run would add {requested_bits:.2f}, "
             f"over the {policy.max_exit_bits:.2f}-bit cap"
         )
         return BudgetDecision(False, reason, spent_before=spent, remaining=remaining)

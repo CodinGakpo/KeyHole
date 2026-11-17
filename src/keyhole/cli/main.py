@@ -21,7 +21,7 @@ from keyhole.common.models import Limits, RunRequest
 from keyhole.controlplane.budget import BudgetPolicy, FileLedger
 from keyhole.controlplane.runner import run_local
 from keyhole.controlplane.store import FileStore
-from keyhole.schema.bandwidth import bandwidth_bits
+from keyhole.schema.bandwidth import bandwidth_bits, run_channel_bits
 from keyhole.schema.spec import OutputSchema
 
 
@@ -56,6 +56,9 @@ def _build_parser() -> argparse.ArgumentParser:
                      help="clean room: run against a registered dataset instead of --data")
     run.add_argument("--grant", metavar="TOKEN",
                      help="clean room: the grant token authorizing --principal on --dataset")
+    run.add_argument("--on", choices=["real", "mock"], default="real",
+                     help="clean room: 'mock' runs on the owner's mock data with full debug "
+                          "output (free); 'real' returns only the bounded answer (default)")
     run.set_defaults(func=_cmd_run)
 
     ds = sub.add_parser("dataset", help="clean room: register datasets and grant access")
@@ -64,6 +67,19 @@ def _build_parser() -> argparse.ArgumentParser:
     ds_add.add_argument("files", nargs="+", metavar="NAME=PATH",
                         help="dataset file(s), NAME=PATH (NAME is how code reads it)")
     ds_add.add_argument("--owner", required=True, help="the data-owner identity")
+    ds_add.add_argument("--max-bits-per-run", type=float, required=True, metavar="BITS",
+                        help="exit policy: the widest answer one run may carry")
+    ds_add.add_argument("--budget-bits", type=float, required=True, metavar="BITS",
+                        help="exit policy: total bits that may ever leave this dataset")
+    ds_add.add_argument("--budget-window", type=float, metavar="SECONDS",
+                        help="make --budget-bits a rolling window (default: for all time)")
+    ds_add.add_argument("--describe", default="", metavar="TEXT",
+                        help="what the data is and how it is laid out (shown to code providers)")
+    ds_add.add_argument("--mock", action="append", default=[], metavar="NAME=PATH",
+                        help="non-sensitive stand-in file of the same shape (repeatable)")
+    ds_add.add_argument("--cloud", action="store_true",
+                        help="register on the cloud control plane (KEYHOLE_API_ENDPOINT, "
+                             "KEYHOLE_OWNER_KEY) instead of the local registry")
     ds_add.set_defaults(func=_cmd_dataset_add)
     ds_ls = dssub.add_parser("ls", help="list registered datasets")
     ds_ls.set_defaults(func=_cmd_dataset_ls)
@@ -71,8 +87,14 @@ def _build_parser() -> argparse.ArgumentParser:
     ds_grant.add_argument("dataset_id")
     ds_grant.add_argument("--to", required=True, metavar="PROVIDER",
                           help="code-provider to authorize, or 'any'")
+    ds_grant.add_argument("--cloud", action="store_true",
+                          help="grant on the cloud control plane (KEYHOLE_OWNER_KEY)")
     ds_grant.set_defaults(func=_cmd_dataset_grant)
-    ds.set_defaults(func=lambda a: (ds.print_help() or 1))
+    def _ds_help(_args: argparse.Namespace) -> int:
+        ds.print_help()
+        return 1
+
+    ds.set_defaults(func=_ds_help)
 
     verify = sub.add_parser("verify", help="verify an attestation file")
     verify.add_argument("attestation", help="path to an attestation JSON")
@@ -100,6 +122,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     schema = OutputSchema.from_dict(json.loads(Path(args.schema).read_text()))
 
     if args.dataset:
+        if api_endpoint() and not args.local:
+            if not args.grant:
+                print("error: --dataset requires --grant <token>", file=sys.stderr)
+                return 2
+            request = RunRequest(code=code, output_schema=schema, principal=args.principal,
+                                 limits=Limits(timeout_seconds=args.timeout),
+                                 dataset_id=args.dataset)
+            return _run_cloud_cmd(args, request, schema, grant=args.grant)
         return _run_cleanroom_cmd(args, code, schema)
 
     data = {}
@@ -121,16 +151,40 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _run_cleanroom_cmd(args: argparse.Namespace, code: str, schema: OutputSchema) -> int:
-    from keyhole.controlplane.cleanroom import DatasetStore, Refusal, run_in_cleanroom
+    from keyhole.controlplane.cleanroom import (
+        DatasetStore,
+        Refusal,
+        run_in_cleanroom,
+        run_on_mock,
+    )
 
     if not args.grant:
         print("error: --dataset requires --grant <token>", file=sys.stderr)
         return 2
+    if args.budget_bits is not None:
+        print("note: --budget-bits is ignored with --dataset; the data owner set the budget")
+
+    dstore = DatasetStore()
+    limits = Limits(timeout_seconds=args.timeout)
+    if args.on == "mock":
+        mock = run_on_mock(dstore, args.dataset, args.grant, args.principal, code, schema, limits)
+        if isinstance(mock, Refusal):
+            print(f"refused:    {mock.reason}")
+            return 4
+        print(f"mock run:   {'output conforms' if mock.conforms else 'needs fixing'}"
+              f"  (exit {mock.exit_code}{', timed out' if mock.timed_out else ''})")
+        for err in mock.errors:
+            print(f"  - {err}")
+        print(f"output:     {mock.output_raw}")
+        if mock.stdout:
+            print(f"--- stdout\n{mock.stdout.rstrip()}")
+        if mock.stderr:
+            print(f"--- stderr\n{mock.stderr.rstrip()}")
+        return 0 if mock.conforms else 3
 
     signer = load_or_create_dev_signer()
     outcome = run_in_cleanroom(
-        DatasetStore(), args.dataset, args.grant, args.principal, code, schema, signer,
-        limits=Limits(timeout_seconds=args.timeout),
+        dstore, args.dataset, args.grant, args.principal, code, schema, signer, limits=limits,
     )
     if isinstance(outcome, Refusal):
         print(f"refused:    {outcome.reason} (nothing ran; the data was never materialized)")
@@ -144,6 +198,10 @@ def _run_cleanroom_cmd(args: argparse.Namespace, code: str, schema: OutputSchema
     print(f"dataset:    {args.dataset}  (owner {outcome.attestation.data_owner})")
     print(f"provider:   {args.principal}")
     _print_result(outcome.result, schema, None, args.principal)
+    ds = dstore.get(args.dataset)
+    if ds is not None:
+        print(f"budget:     {dstore.bits_spent(ds):.2f}/{ds.budget_bits:.2f} bits of this dataset"
+              " (all providers)")
     if args.save_attestation:
         Path(args.save_attestation).write_text(outcome.attestation.model_dump_json(indent=2))
         print(f"saved attestation -> {args.save_attestation}")
@@ -166,6 +224,10 @@ def _run_local_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
     store.put_attestation(outcome.attestation)
 
     _print_result(outcome.result, schema, budget, args.principal)
+    # With --data, whoever runs this supplied the data, so they are its owner and may see the audit.
+    owner_reason = outcome.audit.withheld_reason
+    if owner_reason and owner_reason != outcome.result.withheld_reason:
+        print(f"owner view: {outcome.audit.status.value}: {owner_reason}")
 
     if args.save_attestation:
         Path(args.save_attestation).write_text(outcome.attestation.model_dump_json(indent=2))
@@ -174,15 +236,49 @@ def _run_local_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
     return 0 if outcome.result.status.value == "succeeded" else 3
 
 
-def _run_cloud_cmd(args: argparse.Namespace, request: RunRequest, schema: OutputSchema) -> int:
+def _client(owner: bool = False) -> ApiClient | None:
+    import os
+
     endpoint = api_endpoint()
     if not endpoint:
         print("error: set KEYHOLE_API_ENDPOINT to the control-plane URL, or pass --local",
               file=sys.stderr)
-        return 2
+        return None
+    key = os.environ.get("KEYHOLE_OWNER_KEY" if owner else "KEYHOLE_API_KEY")
+    if not key:
+        print(f"error: set {'KEYHOLE_OWNER_KEY' if owner else 'KEYHOLE_API_KEY'}",
+              file=sys.stderr)
+        return None
+    return ApiClient(endpoint, api_key=key)
 
-    client = ApiClient(endpoint)
-    pending = client.create_run(request)
+
+def _http_error(exc: Exception) -> int:
+    """Print an API refusal (403: the reason never depends on the data) or error, and its code."""
+    import urllib.error
+
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            reason = json.loads(exc.read().decode("utf-8")).get("error", "")
+        except ValueError:
+            reason = ""
+        label = "refused:" if exc.code == 403 else f"error {exc.code}:"
+        print(f"{label:11} {reason}")
+        return 4 if exc.code == 403 else 2
+    raise exc
+
+
+def _run_cloud_cmd(args: argparse.Namespace, request: RunRequest, schema: OutputSchema,
+                   grant: str | None = None) -> int:
+    import urllib.error
+
+    client = _client()
+    if client is None:
+        return 2
+    try:
+        pending = (client.run_dataset(request, grant) if grant is not None
+                   else client.create_run(request))
+    except urllib.error.HTTPError as exc:
+        return _http_error(exc)
     print(f"run:        {pending.run_id}  (submitted; polling…)")
 
     deadline = time.time() + args.timeout + 180  # run time + cold start/queue headroom
@@ -204,13 +300,14 @@ def _run_cloud_cmd(args: argparse.Namespace, request: RunRequest, schema: Output
 def _print_result(r, schema: OutputSchema, budget, principal: str) -> None:
     print(f"run:        {r.run_id}")
     print(f"status:     {r.status.value}")
-    print(f"bandwidth:  {bandwidth_bits(schema):.2f} bits (max that could leave)")
+    print(f"bandwidth:  {bandwidth_bits(schema):.2f} bits per answer, "
+          f"{run_channel_bits(schema):.2f} per run (max that could leave)")
     if r.status.value == "succeeded":
         print(f"output:     {json.dumps(r.output)}")
     else:
         print(f"withheld:   {r.withheld_reason}")
     if budget is not None and r.cumulative_exit_bits is not None:
-        print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits used"
+        print(f"budget:     {r.cumulative_exit_bits:.2f}/{budget.max_exit_bits:.2f} bits charged"
               f" (principal '{principal}')")
     print(f"attestation:{r.attestation_id}")
 
@@ -225,8 +322,13 @@ def _cmd_verify(args: argparse.Namespace) -> int:
     print("VALID" if ok else "INVALID", f"attestation {att.attestation_id}")
     print(f"  algorithm:  {att.algorithm}")
     print(f"  released:   {att.released}")
+    print(f"  sandbox:    {att.isolation}"
+          + ("  (exit gate only: the code had network and file access)"
+             if att.isolation == "none" else ""))
     print(f"  bandwidth:  {att.exit_bandwidth_bits:.2f} bits")
-    print(f"  egress:     {att.egress_denied}/{att.egress_attempts} denied")
+    print(f"  charged:    {att.run_channel_bits:.2f} bits for this run")
+    if att.cumulative_exit_bits is not None:
+        print(f"  cumulative: {att.cumulative_exit_bits:.2f} bits against this budget")
     return 0 if ok else 1
 
 
@@ -245,6 +347,29 @@ def _cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_dataset_add_cloud(args: argparse.Namespace, files: dict[str, str],
+                           mock: dict[str, str]) -> int:
+    import urllib.error
+
+    client = _client(owner=True)
+    if client is None:
+        return 2
+    try:
+        ds = client.create_dataset({
+            "owner": args.owner, "files": files, "mock": mock, "description": args.describe,
+            "max_bits_per_run": args.max_bits_per_run, "budget_bits": args.budget_bits,
+        })
+    except urllib.error.HTTPError as exc:
+        return _http_error(exc)
+    print(f"dataset:    {ds['dataset_id']}  (cloud)")
+    print(f"owner:      {ds['owner']}")
+    print(f"exit policy: at most {ds['max_bits_per_run']:g} bits per run, "
+          f"{ds['budget_bits']:g} in total")
+    print(f"\nGrant a code-provider access:\n  sbx dataset grant {ds['dataset_id']} --to <provider>"
+          " --cloud")
+    return 0
+
+
 def _cmd_dataset_add(args: argparse.Namespace) -> int:
     from keyhole.controlplane.cleanroom import DatasetStore
 
@@ -255,10 +380,26 @@ def _cmd_dataset_add(args: argparse.Namespace) -> int:
             return 2
         name, path = spec.split("=", 1)
         files[name] = Path(path).read_text()
+    mock = {}
+    for spec in args.mock:
+        if "=" not in spec:
+            print(f"error: --mock expects NAME=PATH, got {spec!r}", file=sys.stderr)
+            return 2
+        name, path = spec.split("=", 1)
+        mock[name] = Path(path).read_text()
 
-    ds = DatasetStore().add(args.owner, files)
+    if args.cloud:
+        if args.budget_window is not None:
+            print("error: cloud budgets are cumulative; drop --budget-window", file=sys.stderr)
+            return 2
+        return _cmd_dataset_add_cloud(args, files, mock)
+    ds = DatasetStore().add(
+        args.owner, files, max_bits_per_run=args.max_bits_per_run, budget_bits=args.budget_bits,
+        budget_window_seconds=args.budget_window, description=args.describe, mock=mock,
+    )
     print(f"dataset:    {ds.dataset_id}")
     print(f"owner:      {ds.owner}")
+    print(f"exit policy: at most {ds.max_bits_per_run:g} bits per run, {ds.budget_bits:g} in total")
     print(f"data hash:  {ds.data_sha256}")
     print(f"files:      {', '.join(ds.filenames)}")
     print(f"\nGrant a code-provider access:\n  sbx dataset grant {ds.dataset_id} --to <provider>")
@@ -280,11 +421,25 @@ def _cmd_dataset_ls(args: argparse.Namespace) -> int:
 def _cmd_dataset_grant(args: argparse.Namespace) -> int:
     from keyhole.controlplane.cleanroom import DatasetStore
 
+    grantee = "*" if args.to == "any" else args.to
+    if args.cloud:
+        import urllib.error
+
+        client = _client(owner=True)
+        if client is None:
+            return 2
+        try:
+            g = client.create_grant(args.dataset_id, grantee)
+        except urllib.error.HTTPError as exc:
+            return _http_error(exc)
+        print(f"grant token: {g['grant_id']}  (cloud)")
+        print(f"authorizes:  {g['grantee']}  on  {g['dataset_id']}")
+        return 0
+
     store = DatasetStore()
     if store.get(args.dataset_id) is None:
         print(f"error: no such dataset {args.dataset_id}", file=sys.stderr)
         return 2
-    grantee = "*" if args.to == "any" else args.to
     grant = store.grant(args.dataset_id, grantee)
     print(f"grant token: {grant.grant_id}")
     print(f"authorizes:  {grant.grantee}  on  {grant.dataset_id}")

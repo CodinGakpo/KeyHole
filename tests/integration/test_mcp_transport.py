@@ -17,6 +17,8 @@ from typing import Any
 
 import pytest
 
+from keyhole.controlplane.gate import NOT_RELEASED
+
 mcp = pytest.importorskip("mcp", reason="requires the 'mcp' extra: pip install 'keyhole[mcp]'")
 
 from mcp import ClientSession, StdioServerParameters  # noqa: E402
@@ -80,5 +82,5 @@ def test_exfiltration_is_withheld_over_mcp(tmp_path):
     )
     assert out["status"] == "withheld"
     assert out["output"] is None
-    assert "schema" in out["withheld_reason"]
+    assert out["withheld_reason"] == NOT_RELEASED  # the agent is the caller: opaque
     assert out["attestation_id"]  # even a withheld run is attested

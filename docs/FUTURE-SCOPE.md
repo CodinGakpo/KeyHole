@@ -10,6 +10,12 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## A. Strengthen the guarantee
 
+- ✅ **Run-status side channel closed.** *Done* — every non-release outcome is identical to the
+  caller (real status, reason and exit code only in the owner's audit record), and every run is
+  charged log₂(N + 1) bits. Proven by `test_exit_code_side_channel_is_closed`.
+- **Authenticated API with owner-only audit (next).** The cloud API has no authentication, so the
+  audit endpoint that holds the real run outcomes is readable by anyone with the URL. *Why:* opaque
+  status only holds if the caller can't read the owner's view. *Medium.*
 - **Hardware-anchored attestation (Nitro Enclaves).** Move signing into a hardware enclave so the
   attestation doesn't depend on trusting the control plane. *Why:* the strongest possible trust
   root. *Hard:* needs specific EC2 instance types (budget impact) and enclave tooling.
@@ -19,9 +25,9 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 - **Differential-privacy exit mode.** Optional noise on numeric outputs so even the bounded answer
   doesn't reveal individual records. *Why:* addresses inference leakage. *Hard.*
 - ✅ **Schema-bandwidth budget enforcement.** *Done* — a per-principal cumulative exit-bits ledger
-  (`controlplane/budget.py`) enforced at the exit gate, with an optional rolling window. Repeated
-  small leaks can no longer accumulate past the cap; proven by the `test_drip_exfiltration_over_runs`
-  hostile test. *Why:* defends the residual channel over time.
+  (`controlplane/budget.py`) enforced at the exit gate, with an optional rolling window. Every run
+  is charged what it could reveal, so repeated small leaks can no longer accumulate past the cap;
+  proven by the `test_drip_exfiltration_over_runs` hostile test. *Why:* defends the residual channel over time.
 - **Reproducible/deterministic execution.** Pin the environment and detect nondeterminism so an
   attestation is reproducible. *Why:* strengthens verifiability. *Medium.*
 
@@ -43,7 +49,7 @@ and give it a hostile test (see [book Ch 8](book/08-verification.md)).
 
 ## C. Scale & performance
 
-- **Warm pools.** Pre-warmed Fargate tasks to kill the ~10–30 s cold start. *Why:* demo/UX. *Medium.*
+- **Warm pools.** Pre-warmed Fargate tasks to kill the ~30–60 s cold start measured on real runs. *Why:* demo/UX. *Medium.*
 - **Firecracker/microVM backend.** Sub-second starts and stronger isolation. *Why:* performance +
   cred. *Hard.*
 - **Concurrency & quotas at scale.** Per-org fair scheduling, backpressure. *Medium.*

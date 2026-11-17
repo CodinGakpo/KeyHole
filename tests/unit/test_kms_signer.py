@@ -47,8 +47,7 @@ def _attestation() -> Attestation:
         output_sha256=None,
         output="spam",
         exit_bandwidth_bits=1.58,
-        egress_attempts=0,
-        egress_denied=0,
+        run_channel_bits=1.0,
         exit_code=0,
         released=True,
     )

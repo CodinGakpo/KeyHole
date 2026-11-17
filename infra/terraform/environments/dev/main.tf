@@ -50,6 +50,20 @@ variable "enable_egress_endpoints" {
   default = false
 }
 
+# Bearer tokens for the API. Callers get api_key; the data owner's audit route needs owner_key.
+# Unset => the API refuses every request. Generate with: openssl rand -hex 32
+variable "api_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "owner_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
 # Customer KMS key for attestation SIGNING only (the private key never leaves KMS). ~$1/mo, so
 # only when the control plane is on. The bucket uses free SSE-S3, so KMS is not needed for encryption.
 resource "aws_kms_key" "keyhole" {
@@ -63,6 +77,7 @@ resource "aws_kms_key" "keyhole" {
 module "network" {
   source                  = "../../modules/network"
   enable_egress_endpoints = var.enable_egress_endpoints
+  artifacts_bucket        = module.state.bucket
 }
 
 module "registry" {
@@ -99,6 +114,8 @@ module "controlplane" {
   subnet_id           = module.network.private_subnet_id
   security_group_id   = module.network.run_security_group_id
   kms_key_arn         = aws_kms_key.keyhole[0].arn
+  api_key             = var.api_key
+  owner_key           = var.owner_key
 }
 
 module "guardrails" {

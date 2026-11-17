@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from keyhole.controlplane.budget import (
     BudgetPolicy,
     FileLedger,
@@ -65,10 +67,12 @@ def test_file_ledger_persists_across_instances(tmp_path):
     assert FileLedger(path).spent("alice", None, NOW) == 3.5
 
 
-def test_file_ledger_treats_missing_or_corrupt_file_as_empty(tmp_path):
+def test_file_ledger_missing_is_empty_but_corrupt_fails_closed(tmp_path):
     missing = FileLedger(tmp_path / "nope.json")
     assert missing.spent("alice", None, NOW) == 0.0
 
+    # A damaged ledger must not read as "nothing spent yet": that would reset every budget.
     corrupt = tmp_path / "bad.json"
     corrupt.write_text("{ not json")
-    assert FileLedger(corrupt).spent("alice", None, NOW) == 0.0
+    with pytest.raises(ValueError, match="corrupt"):
+        FileLedger(corrupt).spent("alice", None, NOW)

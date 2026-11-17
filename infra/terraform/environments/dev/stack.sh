@@ -1,11 +1,12 @@
 #!/bin/sh
-# One-command on/off for the full cloud stack (keyhole account 162663626031, us-east-1).
+# One-command on/off for the full cloud stack (us-east-1).
 #
 #   up   = build the Lambda zip, terraform apply (control plane on), push the sandbox image to ECR,
 #          then print the API endpoint and write the KMS public key to /tmp/kms.pem
 #   down = terraform destroy everything
 #
-# Credentials come from the repo-root .env exactly as in tf.sh (parsed, never sourced).
+# Credentials come from the repo-root .env exactly as in tf.sh (parsed, never sourced). The API
+# keys come from .env too (KEYHOLE_API_KEY, KEYHOLE_OWNER_KEY); without them the API refuses all.
 # Usage (from anywhere):  infra/terraform/environments/dev/stack.sh up|down
 set -eu
 
@@ -24,6 +25,9 @@ AWS_SECRET_ACCESS_KEY=$(get AWS_SECRET_KEY)
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 export AWS_REGION=us-east-1 AWS_DEFAULT_REGION=us-east-1
 unset AWS_PROFILE
+TF_VAR_api_key=$(get KEYHOLE_API_KEY)
+TF_VAR_owner_key=$(get KEYHOLE_OWNER_KEY)
+export TF_VAR_api_key TF_VAR_owner_key
 
 # The Lambda resource hashes this zip whenever the config is evaluated, so destroy needs it too.
 [ -f "$repo/dist/controlplane.zip" ] || (cd "$repo" && .venv/bin/python scripts/build_lambda.py)
@@ -43,8 +47,10 @@ up)
         --query PublicKey --output text | base64 -d \
         | openssl pkey -pubin -inform DER -outform PEM > /tmp/kms.pem
     echo
-    echo "UP. Costs ~\$0.03/h and the API is unauthenticated; run 'stack.sh down' when done."
+    echo "UP. Costs ~\$0.03/h; run 'stack.sh down' when done."
+    [ -n "$TF_VAR_api_key" ] || echo "  WARNING: no KEYHOLE_API_KEY in .env, so the API refuses every request"
     echo "  export KEYHOLE_API_ENDPOINT=$(terraform output -raw api_endpoint)"
+    echo "  export KEYHOLE_API_KEY=<KEYHOLE_API_KEY from .env>"
     echo "  verify cloud attestations with: --pubkey /tmp/kms.pem"
     ;;
 down)

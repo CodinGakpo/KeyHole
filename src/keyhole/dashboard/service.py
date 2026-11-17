@@ -3,6 +3,9 @@
 Keeping these HTTP-free makes the dashboard's logic directly unit-testable and lets the server be a
 thin adapter. Attestation verification reuses the same ``verify_attestation`` as the CLI, so the
 badge shown in the browser means exactly what `sbx verify` means.
+
+The dashboard is the data owner's view: where an audit record exists, it shows the real outcome
+(failed / timeout / withheld, reason, exit code) rather than the caller's opaque "withheld".
 """
 
 from __future__ import annotations
@@ -32,9 +35,10 @@ def list_summaries(
     for result in store.list_runs(limit):
         att = store.get_attestation(result.attestation_id) if result.attestation_id else None
         audit = store.get_audit(result.run_id)
+        status = audit.status if audit else result.status
         summaries.append({
             "run_id": result.run_id,
-            "status": result.status.value,
+            "status": status.value,
             "released": result.status.value == "succeeded",
             "exit_bandwidth_bits": result.exit_bandwidth_bits,
             "attestation_id": result.attestation_id,
@@ -51,8 +55,16 @@ def run_detail(store: Store, run_id: str, pubkey_pem: bytes | None) -> dict[str,
         return None
     audit = store.get_audit(run_id)
     att = store.get_attestation(result.attestation_id) if result.attestation_id else None
+    owner_view = result.model_dump(mode="json")
+    if audit is not None:
+        owner_view.update(
+            status=audit.status.value,
+            withheld_reason=audit.withheld_reason,
+            exit_code=audit.exit_code,
+            duration_ms=audit.duration_ms,
+        )
     return {
-        "result": result.model_dump(mode="json"),
+        "result": owner_view,
         "audit": audit.model_dump(mode="json") if audit else None,
         "attestation": att.model_dump(mode="json") if att else None,
         "verified": _verified(att, pubkey_pem),

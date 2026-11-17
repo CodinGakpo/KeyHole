@@ -6,7 +6,9 @@ the quantitative form of Keyhole's core guarantee: if the schema permits at most
 leave, then no more than N bits of the supplied data can be exfiltrated per run.
 
 The estimates are deliberately *conservative upper bounds* — we would rather overstate the
-channel width than understate it. Unbounded scalars fall back to fixed machine-width caps.
+channel width than understate it. Each figure is log2 of (at least) the number of distinct values
+:func:`keyhole.schema.validate.canonicalize` can release; ``tests/unit/test_bandwidth.py`` checks
+that by brute force. Unbounded scalars are 64 bits, and validation holds them to 64 bits.
 """
 
 from __future__ import annotations
@@ -43,15 +45,12 @@ def bandwidth_bits(schema: OutputSchema) -> float:
 
     if t is SchemaType.STRING:
         assert schema.max_length is not None  # guaranteed by spec validation
-        symbols = len(schema.charset) if schema.charset else 256
-        per_symbol = math.log2(symbols) if symbols > 1 else 0.0
-        return schema.max_length * per_symbol
+        symbols = len(schema.charset) if schema.charset else 256  # no charset: UTF-8 bytes
+        return _sequence_bits(math.log2(symbols), schema.max_length)
 
     if t is SchemaType.ARRAY:
-        # Conservative upper bound: a full array of max_items max-entropy elements. Any array of
-        # <= max_items elements carries no more than this, so it is a valid upper bound.
         assert schema.items is not None and schema.max_items is not None  # guaranteed by spec
-        return schema.max_items * bandwidth_bits(schema.items)
+        return _sequence_bits(bandwidth_bits(schema.items), schema.max_items)
 
     if t is SchemaType.OBJECT:
         assert schema.properties is not None  # guaranteed by spec validation
@@ -60,6 +59,30 @@ def bandwidth_bits(schema: OutputSchema) -> float:
     raise ValueError(f"unknown schema type: {t!r}")
 
 
+def _sequence_bits(item_bits: float, max_len: int) -> float:
+    """Bits carried by a sequence of 0..max_len items of ``item_bits`` each.
+
+    The length is part of the message: there are sum(N**k for k in 0..max_len) such sequences
+    (N = 2**item_bits), not N**max_len. For N = 1 that is max_len + 1 outcomes, not one.
+    """
+    if item_bits == 0:
+        return math.log2(max_len + 1)
+    geometric = (1 - 2.0 ** (-item_bits * (max_len + 1))) / (1 - 2.0**-item_bits)
+    return item_bits * max_len + math.log2(geometric)
+
+
 def bandwidth_bytes(schema: OutputSchema) -> float:
     """Bandwidth expressed in bytes, for human-readable reporting."""
     return bandwidth_bits(schema) / 8.0
+
+
+def run_channel_bits(schema: OutputSchema) -> float:
+    """Upper bound, in bits, on what one *run* reveals to its caller — the per-run budget charge.
+
+    A run ends in one of the schema's conforming values or in "not released" (every non-release
+    outcome looks identical to the caller), so it can signal one of N + 1 outcomes, where
+    N = 2**bandwidth_bits. log2(N + 1) is computed as b + log2(1 + 2**-b) to stay finite for wide
+    schemas.
+    """
+    b = bandwidth_bits(schema)
+    return b + math.log2(1 + 2.0**-b)

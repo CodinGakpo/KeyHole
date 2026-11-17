@@ -22,6 +22,13 @@ def _to_dynamo(item: dict) -> dict:
     return json.loads(json.dumps(item), parse_float=Decimal)
 
 
+def _doc(run_id: str, model) -> dict:
+    """A record stored as one JSON string. DynamoDB returns every number as ``Decimal``, which
+    would turn a released ``42`` into ``"42"`` and invalidate the signature over it; a string
+    comes back byte-for-byte."""
+    return {"run_id": run_id, "json": model.model_dump_json()}
+
+
 class Store(Protocol):
     def put_result(self, result: RunResult) -> None: ...
     def get_result(self, run_id: str) -> RunResult | None: ...
@@ -33,6 +40,7 @@ class Store(Protocol):
     # the serialized RunRequest, the task ARN, and the presigned output key.
     def put_pending(self, run_id: str, ctx: dict[str, Any]) -> None: ...
     def get_pending(self, run_id: str) -> dict[str, Any] | None: ...
+    def delete_pending(self, run_id: str) -> None: ...
     # Most-recent-first run results, for the dashboard.
     def list_runs(self, limit: int = 100) -> list[RunResult]: ...
 
@@ -70,6 +78,9 @@ class InMemoryStore:
     def get_pending(self, run_id: str) -> dict[str, Any] | None:
         return self._pending.get(run_id)
 
+    def delete_pending(self, run_id: str) -> None:
+        self._pending.pop(run_id, None)
+
     def list_runs(self, limit: int = 100) -> list[RunResult]:
         return list(reversed(list(self._results.values())))[:limit]
 
@@ -89,29 +100,28 @@ class DynamoStore:
         self._audit = ddb.Table(audit_table)
 
     def put_result(self, result: RunResult) -> None:  # pragma: no cover - needs AWS
-        self._runs.put_item(Item=_to_dynamo(result.model_dump(mode="json")))
+        self._runs.put_item(Item=_doc(result.run_id, result))
 
-    def get_result(self, run_id: str) -> RunResult | None:  # pragma: no cover - needs AWS
+    def get_result(self, run_id: str) -> RunResult | None:
         item = self._runs.get_item(Key={"run_id": run_id}).get("Item")
-        return RunResult.model_validate(item) if item else None
+        return RunResult.model_validate_json(item["json"]) if item else None
 
-    def put_audit(self, audit: AuditRecord) -> None:  # pragma: no cover - needs AWS
-        self._audit.put_item(Item=_to_dynamo(audit.model_dump(mode="json")))
+    def put_audit(self, audit: AuditRecord) -> None:
+        self._audit.put_item(Item=_doc(audit.run_id, audit))
 
-    def get_audit(self, run_id: str) -> AuditRecord | None:  # pragma: no cover - needs AWS
+    def get_audit(self, run_id: str) -> AuditRecord | None:
         item = self._audit.get_item(Key={"run_id": run_id}).get("Item")
-        return AuditRecord.model_validate(item) if item else None
+        return AuditRecord.model_validate_json(item["json"]) if item else None
 
-    def put_attestation(self, attestation: Attestation) -> None:  # pragma: no cover - needs AWS
-        # Wrap under "att" so the attestation's own run_id field cannot clobber the item's PK.
-        self._runs.put_item(Item=_to_dynamo({
-            "run_id": f"att#{attestation.attestation_id}",
-            "att": attestation.model_dump(mode="json"),
-        }))
+    def put_attestation(self, attestation: Attestation) -> None:
+        self._runs.put_item(Item=_doc(f"att#{attestation.attestation_id}", attestation))
 
-    def get_attestation(self, attestation_id: str) -> Attestation | None:  # pragma: no cover
+    def get_attestation(self, attestation_id: str) -> Attestation | None:
         item = self._runs.get_item(Key={"run_id": f"att#{attestation_id}"}).get("Item")
-        return Attestation.model_validate(item["att"]) if item else None
+        return Attestation.model_validate_json(item["json"]) if item else None
+
+    def delete_pending(self, run_id: str) -> None:  # pragma: no cover - needs AWS
+        self._runs.delete_item(Key={"run_id": f"pending#{run_id}"})
 
     def put_pending(self, run_id: str, ctx: dict) -> None:  # pragma: no cover - needs AWS
         self._runs.put_item(Item=_to_dynamo({"run_id": f"pending#{run_id}", "ctx": ctx}))
@@ -124,9 +134,9 @@ class DynamoStore:
         # A bounded scan; the att#/pending# discriminator rows are not run results.
         items = self._runs.scan(Limit=limit * 3).get("Items", [])
         runs = [
-            RunResult.model_validate(i)
+            RunResult.model_validate_json(i["json"])
             for i in items
-            if not str(i["run_id"]).startswith(("att#", "pending#"))
+            if str(i["run_id"]).startswith("run-")  # not att#/pending#/ds#/grant#/ledger#
         ]
         return runs[:limit]
 
@@ -176,6 +186,9 @@ class FileStore:
 
     def get_pending(self, run_id: str) -> dict[str, Any] | None:
         return self._read("pending", run_id)
+
+    def delete_pending(self, run_id: str) -> None:
+        (self._root / "pending" / f"{run_id}.json").unlink(missing_ok=True)
 
     def list_runs(self, limit: int = 100) -> list[RunResult]:
         files = sorted(

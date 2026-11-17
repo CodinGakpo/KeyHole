@@ -59,14 +59,23 @@ released. A run whose output doesn't conform releases *nothing*. The exit's info
 The per-run bound says nothing about *repetition*. An adversary who can call the box N times, each
 run individually within schema, could drip out N × bandwidth bits over time — the per-run guarantee
 is silent on the total. Keyhole closes this with a **per-principal cumulative exit-bandwidth budget**
-(`controlplane/budget.py`): a ledger records the bits released to each caller and, optionally, only
-within a rolling window (e.g. per day). At the exit gate, a conforming output is **withheld** once
-releasing it would push the caller's total past the cap. Only *released* runs spend budget — a
-withheld run leaks nothing, so it charges zero — and we charge the schema's conservative upper
-bound, never less. The `test_drip_exfiltration_over_runs` hostile test proves a repeated
+(`controlplane/budget.py`): a ledger records the bits charged to each caller and, optionally, only
+within a rolling window (e.g. per day). At the exit gate, once the caller cannot afford another run,
+the run is **withheld** whatever the code did. *Every* admitted run is charged, released or not —
+see the status channel below — at log₂(N + 1) bits, the schema's conservative bound plus the one
+"not released" outcome. The `test_drip_exfiltration_over_runs` hostile test proves a repeated
 one-bit-per-run leak is capped no matter how many times the attacker calls. The budget is a
 guardrail recorded in the audit trail, deliberately *outside* the signed attestation, so the
 attestation schema and verifier stay stable.
+
+**The status channel (found and closed).** "A withheld run leaks nothing" is true of its *output*,
+not of its *status*. Originally the caller saw whether each run succeeded, was withheld, failed or
+timed out, and a failed run reported its exit code — so code could signal through *how* it failed:
+up to ~8 bits per run, uncharged, with no limit on runs. The gate now reports every non-release
+outcome identically to the caller (the real status, reason and exit code go only to the owner's
+audit record) and charges every run log₂(N + 1) bits. `test_exit_code_side_channel_is_closed`
+proves it: an attack that exits with secret bytes produces one identical caller view. Residue: the
+cloud API has no authentication yet, so its audit endpoint is not owner-only.
 
 ### List answers without a hidden wide exit — the bounded array
 

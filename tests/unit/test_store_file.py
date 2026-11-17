@@ -18,7 +18,7 @@ def _audit(run_id: str) -> AuditRecord:
 def _attestation(run_id: str) -> Attestation:
     return Attestation(attestation_id=f"att-{run_id}", run_id=run_id, code_sha256="a"*64,
                        data_sha256="b"*64, schema_sha256="c"*64, output_sha256=None, output="spam",
-                       exit_bandwidth_bits=1.0, egress_attempts=0, egress_denied=0, exit_code=0,
+                       exit_bandwidth_bits=1.0, run_channel_bits=1.58, exit_code=0,
                        released=True)
 
 

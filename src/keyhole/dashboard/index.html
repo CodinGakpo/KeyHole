@@ -128,7 +128,7 @@
   </main>
 </div>
 <script>
-const S={released:"released",withheld:"withheld",failed:"fail",timeout:"fail",pending:"withheld",running:"withheld"};
+const S={succeeded:"released",released:"released",withheld:"withheld",failed:"fail",timeout:"fail",pending:"withheld",running:"withheld"};
 const pill=s=>`<span class="pill ${S[s]||'fail'}">${s}</span>`;
 const sigMark=v=> v===true?'<span class="sig ok">&#10003; VALID</span>'
   : v===false?'<span class="sig bad">&#10007; INVALID</span>'
@@ -136,8 +136,17 @@ const sigMark=v=> v===true?'<span class="sig ok">&#10003; VALID</span>'
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const shortId=s=>s? s.replace(/^run-/,'').slice(0,12) : '';
 
+let lastRuns=null;
 async function loadRuns(){
   const runs=await (await fetch('/api/runs')).json();
+  const key=JSON.stringify(runs);
+  if(key===lastRuns)return;  // polled: only redraw when the ledger changed
+  lastRuns=key;
+  const selected=document.querySelector('.row[aria-selected="true"]')?.dataset.id;
+  if(selected && !runs.some(r=>r.run_id===selected)){
+    document.getElementById('inspector').innerHTML=
+      '<div class="empty">Select a run to inspect its evidence.</div>';
+  }
   document.getElementById('count').textContent=runs.length+' run'+(runs.length===1?'':'s');
   const rows=document.getElementById('rows');
   if(!runs.length){rows.innerHTML='<div class="row"><span class="meta">No runs yet. Try: sbx run … --local</span></div>';return;}
@@ -152,6 +161,7 @@ async function loadRuns(){
     const go=()=>select(el);
     el.addEventListener('click',go);
     el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go();}});
+    if(el.dataset.id===selected)el.setAttribute('aria-selected','true');
   });
 }
 
@@ -196,7 +206,7 @@ async function detail(id){
 
     <div class="grid">
       <div class="cell"><div class="k">released value</div><div class="v">${r.output!=null?esc(JSON.stringify(r.output)):'&mdash; nothing'}</div></div>
-      <div class="cell"><div class="k">egress denied</div><div class="v">${a?a.egress_denied+' / '+a.egress_attempts:'&mdash;'}</div></div>
+      <div class="cell"><div class="k">charged this run</div><div class="v">${at&&at.run_channel_bits!=null?at.run_channel_bits.toFixed(2)+' bits':'&mdash;'}</div></div>
       <div class="cell"><div class="k">dlp findings</div><div class="v">${a?a.dlp_findings:'&mdash;'}</div></div>
       <div class="cell"><div class="k">duration</div><div class="v">${r.duration_ms!=null?r.duration_ms+' ms':'&mdash;'}</div></div>
     </div>
@@ -248,6 +258,7 @@ function wireDrop(){
   });
 }
 loadRuns();
+setInterval(()=>loadRuns().catch(()=>{}),2000);  // live: new runs appear as they happen
 </script>
 </body>
 </html>
